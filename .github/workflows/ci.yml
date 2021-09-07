@@ -14,12 +14,10 @@ env:
   GOLANGCI_VERSION: 'v1.53.3'
   DOCKER_BUILDX_VERSION: 'v0.10.0'
 
-  # Common users. We can't run a step 'if secrets.AWS_USR != ""' but we can run
-  # a step 'if env.AWS_USR' != ""', so we copy these to succinctly test whether
+  # Common users. We can't run a step 'if secrets.DOCKER_USR != ""' but we can run
+  # a step 'if env.DOCKER_USR' != ""', so we copy these to succinctly test whether
   # credentials have been provided before trying to run steps that need them.
   DOCKER_USR: ${{ secrets.DOCKER_USR }}
-  AWS_USR: ${{ secrets.AWS_USR }}
-  UPBOUND_MARKETPLACE_PUSH_ROBOT_USR: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
 
 jobs:
   check-diff:
@@ -380,60 +378,12 @@ jobs:
           username: ${{ secrets.DOCKER_USR }}
           password: ${{ secrets.DOCKER_PSW }}
 
-      - name: Login to Upbound
-        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc # v2
-        if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
-        with:
-          registry: xpkg.upbound.io
-          username: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
-          password: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }}
-
-      - name: Publish Artifacts to S3, Marketplace, DockerHub
+      - name: Publish Artifacts to Docker Hub
         run: make -j2 publish BRANCH_NAME=${GITHUB_REF##*/}
-        if: env.AWS_USR != '' && env.DOCKER_USR != '' && env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_USR }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PSW }}
-          AWS_DEFAULT_REGION: us-east-1
-          GIT_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DOCS_GIT_USR: ${{ secrets.UPBOUND_BOT_GITHUB_USR }}
-          DOCS_GIT_PSW: ${{ secrets.UPBOUND_BOT_GITHUB_PSW }}
 
-      - name: Promote Artifacts in S3, DockerHub
-        if: github.ref == 'refs/heads/master' && env.AWS_USR != '' && env.DOCKER_USR != '' && env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
+      - name: Promote Artifacts in Docker Hub
+        if: github.ref == 'refs/heads/master' && env.DOCKER_USR != ''
         run: make -j2 promote
         env:
           BRANCH_NAME: master
           CHANNEL: master
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_USR }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PSW }}
-          AWS_DEFAULT_REGION: us-east-1
-
-  fuzz-test:
-    runs-on: ubuntu-22.04
-    needs: detect-noop
-    if: needs.detect-noop.outputs.noop != 'true'
-
-    steps:
-      # TODO(negz): Can we make this use our Go build and dependency cache? It
-      # seems to build Crossplane inside of a Docker image.
-      - name: Build Fuzzers
-        id: build
-        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
-        with:
-          oss-fuzz-project-name: "crossplane"
-          language: go
-
-      - name: Run Fuzzers
-        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
-        with:
-          oss-fuzz-project-name: "crossplane"
-          fuzz-seconds: 300
-          language: go
-
-      - name: Upload Crash
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3
-        if: failure() && steps.build.outcome == 'success'
-        with:
-          name: artifacts
-          path: ./out/artifacts
