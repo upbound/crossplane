@@ -66,6 +66,13 @@ docker tag "${BUILD_IMAGE}" "${CROSSPLANE_IMAGE}"
 "${KIND}" load docker-image "${CROSSPLANE_IMAGE}" --name="${K8S_CLUSTER}"
 
 echo_step "installing helm package(s) into \"${CROSSPLANE_NAMESPACE}\" namespace"
+
+# We removed helm.mk since we don't need/want to publish helm charts. However,
+# we lost templating functionality from values.yaml.tmpl which is handled with
+# the following lines instead.
+cp "${projectdir}/cluster/charts/${PROJECT_NAME}/values.yaml.tmpl" "${projectdir}/cluster/charts/${PROJECT_NAME}/values.yaml"
+sed -i -e "s|%%VERSION%%|${helm_tag}|g" "${projectdir}/cluster/charts/${PROJECT_NAME}/values.yaml"
+
 "${KUBECTL}" create ns "${CROSSPLANE_NAMESPACE}"
 "${HELM3}" install "${PROJECT_NAME}" --namespace "${CROSSPLANE_NAMESPACE}" "${projectdir}/cluster/charts/${PROJECT_NAME}" --set replicas=2,rbacManager.replicas=2,image.pullPolicy=Never,imagePullSecrets=''
 
