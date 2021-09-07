@@ -42,7 +42,7 @@ SAFEHOSTARCH="${SAFEHOSTARCH:-amd64}"
 BUILD_IMAGE="${BUILD_REGISTRY}/${PROJECT_NAME}-${SAFEHOSTARCH}"
 
 helm_tag="$(cat ${projectdir}/_output/version)"
-CROSSPLANE_IMAGE="${PROJECT_NAME}/${PROJECT_NAME}:${helm_tag}"
+CROSSPLANE_IMAGE="upbound/${PROJECT_NAME}:${helm_tag}"
 K8S_CLUSTER="${K8S_CLUSTER:-${BUILD_REGISTRY}-inttests}"
 
 CROSSPLANE_NAMESPACE="crossplane-system"
@@ -66,6 +66,13 @@ docker tag "${BUILD_IMAGE}" "${CROSSPLANE_IMAGE}"
 "${KIND}" load docker-image "${CROSSPLANE_IMAGE}" --name="${K8S_CLUSTER}"
 
 echo_step "installing helm package(s) into \"${CROSSPLANE_NAMESPACE}\" namespace"
+
+# We removed helm.mk since we don't need/want to publish helm charts. However,
+# we lost templating functionality from values.yaml.tmpl which is handled with
+# the following lines instead.
+cp "${projectdir}/cluster/charts/${PROJECT_NAME}/values.yaml.tmpl" "${projectdir}/cluster/charts/${PROJECT_NAME}/values.yaml"
+sed -i -e "s|%%VERSION%%|${helm_tag}|g" "${projectdir}/cluster/charts/${PROJECT_NAME}/values.yaml"
+
 "${KUBECTL}" create ns "${CROSSPLANE_NAMESPACE}"
 "${HELM3}" install "${PROJECT_NAME}" --namespace "${CROSSPLANE_NAMESPACE}" "${projectdir}/cluster/charts/${PROJECT_NAME}" --set replicas=2,rbacManager.replicas=2,image.pullPolicy=Never,imagePullSecrets=''
 
