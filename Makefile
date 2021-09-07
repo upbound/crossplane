@@ -14,7 +14,6 @@ PLATFORMS ?= linux_amd64 linux_arm64 linux_arm linux_ppc64le darwin_amd64 darwin
 # ====================================================================================
 # Setup Output
 
-S3_BUCKET ?= crossplane.releases
 -include build/makelib/output.mk
 
 # ====================================================================================
@@ -45,31 +44,14 @@ HELM3_VERSION = v3.6.3
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================
-# Setup Helm
-
-HELM_BASE_URL = https://charts.crossplane.io
-HELM_S3_BUCKET = crossplane.charts
-HELM_CHARTS = crossplane
-HELM_CHART_LINT_ARGS_crossplane = --set nameOverride='',imagePullSecrets=''
--include build/makelib/helm.mk
-
-# ====================================================================================
 # Setup Images
 # Due to the way that the shared build logic works, images should
 # all be in folders at the same level (no additional levels of nesting).
 
-REGISTRY_ORGS = docker.io/crossplane registry.upbound.io/crossplane
+REGISTRY_ORGS = docker.io/upbound
 IMAGES = crossplane
 OSBASEIMAGE = gcr.io/distroless/static:nonroot
 -include build/makelib/imagelight.mk
-
-# ====================================================================================
-# Setup Docs
-
-SOURCE_DOCS_DIR = docs
-DEST_DOCS_DIR = docs
-DOCS_GIT_REPO = https://$(DOCS_GIT_USR):$(DOCS_GIT_PSW)@github.com/crossplane/crossplane.github.io.git
--include build/makelib/docs.mk
 
 # ====================================================================================
 # Targets
