@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -37,6 +38,12 @@ const (
 	errFmtTransformTypeFailed          = "%s transform could not resolve"
 	errFmtMapTypeNotSupported          = "type %s is not supported for map transform"
 	errFmtMapNotFound                  = "key %s is not found in map"
+
+	errStringTransformTypeFailed  = "type %s is not supported for string transform type"
+	errStringTransformTypeFormat  = "string transform of type %s fmt is not set"
+	errStringTransformTypeConvert = "string transform of type %s convert is not set"
+	errStringTransformTypeTrim    = "string transform of type %s trim is not set"
+	errStringConvertTypeFailed    = "type %s is not supported for string convert"
 )
 
 // TransformType is type of the transform function to be chosen.
@@ -167,16 +174,96 @@ func (m *MapTransform) Resolve(input interface{}) (interface{}, error) {
 	}
 }
 
+// StringTransformType is type of the string transform function to be executed fmt/convert.
+type StringTransformType string
+
+// Accepted StringTransformType.
+const (
+	StringTransformFormat     StringTransformType = "Format" // Default
+	StringTransformConvert    StringTransformType = "Convert"
+	StringTransformTrimPrefix StringTransformType = "TrimPrefix"
+	StringTransformTrimSuffix StringTransformType = "TrimSuffix"
+)
+
+// StringConversionType is the type of string conversion, ToUpper/ToLower
+type StringConversionType string
+
+// ConversionType accepted values.
+const (
+	ConversionTypeToUpper = "ToUpper"
+	ConversionTypeToLower = "ToLower"
+)
+
 // A StringTransform returns a string given the supplied input.
 type StringTransform struct {
+
+	// Type of the string transform to be run.
+	// +optional
+	// +kubebuilder:validation:Enum=Format;Convert;TrimPrefix;TrimSuffix
+	// +kubebuilder:default=Format
+	Type StringTransformType `json:"type,omitempty"`
+
 	// Format the input using a Go format string. See
 	// https://golang.org/pkg/fmt/ for details.
-	Format string `json:"fmt"`
+	// +optional
+	Format *string `json:"fmt,omitempty"`
+
+	// Convert the type of conversion to Upper/Lower case.
+	// +optional
+	// +kubebuilder:validation:Enum=ToUpper;ToLower
+	Convert *StringConversionType `json:"convert,omitempty"`
+
+	// Trim the prefix or suffix from the input
+	// +optional
+	Trim *string `json:"trim,omitempty"`
 }
 
 // Resolve runs the String transform.
 func (s *StringTransform) Resolve(input interface{}) (interface{}, error) {
-	return fmt.Sprintf(s.Format, input), nil
+
+	switch s.Type {
+	case StringTransformFormat:
+		if s.Format == nil {
+			return nil, errors.Errorf(errStringTransformTypeFormat, string(s.Type))
+		}
+		return fmt.Sprintf(*s.Format, input), nil
+	case StringTransformConvert:
+		if s.Convert == nil {
+			return nil, errors.Errorf(errStringTransformTypeConvert, string(s.Type))
+		}
+		return stringConvertTransform(input, s.Convert)
+
+	case StringTransformTrimPrefix, StringTransformTrimSuffix:
+		if s.Trim == nil {
+			return nil, errors.Errorf(errStringTransformTypeTrim, string(s.Type))
+		}
+		return stringTrimTransform(input, s.Type, *s.Trim), nil
+	default:
+		return nil, errors.Errorf(errStringTransformTypeFailed, string(s.Type))
+	}
+}
+
+func stringConvertTransform(input interface{}, t *StringConversionType) (interface{}, error) {
+	str := fmt.Sprintf("%v", input)
+	switch *t {
+	case ConversionTypeToUpper:
+		return strings.ToUpper(str), nil
+	case ConversionTypeToLower:
+		return strings.ToLower(str), nil
+	default:
+		return nil, errors.Errorf(errStringConvertTypeFailed, *t)
+	}
+}
+
+func stringTrimTransform(input interface{}, t StringTransformType, trim string) string {
+	str := fmt.Sprintf("%v", input)
+	if t == StringTransformTrimPrefix {
+		return strings.TrimPrefix(str, trim)
+	}
+	if t == StringTransformTrimSuffix {
+		return strings.TrimSuffix(str, trim)
+	}
+	return str
 }
 
 // The list of supported ConvertTransform input and output types.

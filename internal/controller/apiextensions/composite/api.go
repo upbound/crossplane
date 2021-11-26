@@ -23,13 +23,13 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
@@ -83,12 +83,13 @@ func (a *APIFilteredSecretPublisher) PublishConnection(ctx context.Context, o re
 
 	s := resource.ConnectionSecretFor(o, o.GetObjectKind().GroupVersionKind())
 	m := map[string]bool{}
-	// TODO(muvaf): Should empty filter allow all keys?
 	for _, key := range a.filter {
 		m[key] = true
 	}
 	for key, val := range c {
-		if _, ok := m[key]; ok {
+		// If the filter does not have any keys, we allow all given keys to be
+		// published.
+		if len(m) == 0 || m[key] {
 			s.Data[key] = val
 		}
 	}

@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/fake"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
@@ -107,7 +107,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		"ListServiceAccountsError": {
-			reason: "We should requeue when an error is encountered listing ServiceAccounts.",
+			reason: "We should return an error encountered listing ServiceAccounts.",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -124,11 +124,11 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: shortWait},
+				err: errors.Wrap(errBoom, errListSAs),
 			},
 		},
 		"ApplyClusterRoleBindingError": {
-			reason: "We should requeue when an error is encountered applying a ClusterRoleBinding.",
+			reason: "We should return an error encountered applying a ClusterRoleBinding.",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -149,7 +149,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: shortWait},
+				err: errors.Wrap(errBoom, errApplyBinding),
 			},
 		},
 		"SuccessfulApply": {

@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/pkg/errors"
 	rbacv1 "k8s.io/api/rbac/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/fake"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
@@ -109,7 +109,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		"ListCRDsError": {
-			reason: "We should requeue when an error is encountered listing CRDs.",
+			reason: "We should return an error encountered listing CRDs.",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -122,11 +122,11 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: shortWait},
+				err: errors.Wrap(errBoom, errListCRDs),
 			},
 		},
 		"ValidatePermissionRequestsError": {
-			reason: "We should requeue when an error is encountered validating permission requests.",
+			reason: "We should return an error encountered validating permission requests.",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -142,7 +142,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: shortWait},
+				err: errors.Wrap(errBoom, errValidatePermissions),
 			},
 		},
 		"PermissionRequestRejected": {
@@ -166,7 +166,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		"ApplyClusterRoleError": {
-			reason: "We should requeue when an error is encountered applying a ClusterRole.",
+			reason: "We should return an error encountered applying a ClusterRole.",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -185,7 +185,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: shortWait},
+				err: errors.Wrap(errBoom, errApplyRole),
 			},
 		},
 		"SuccessfulNoOp": {

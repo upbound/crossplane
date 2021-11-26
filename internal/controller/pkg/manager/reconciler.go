@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/pointer"
@@ -30,29 +29,27 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
+	"github.com/crossplane/crossplane/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/internal/xpkg"
 )
 
 const (
 	reconcileTimeout = 1 * time.Minute
-
-	shortWait     = 30 * time.Second
-	veryShortWait = 5 * time.Second
-	pullWait      = 1 * time.Minute
 )
 
 func pullBasedRequeue(p *corev1.PullPolicy) reconcile.Result {
-	r := reconcile.Result{}
 	if p != nil && *p == corev1.PullAlways {
-		r.RequeueAfter = pullWait
+		return reconcile.Result{Requeue: true}
 	}
-	return r
+	return reconcile.Result{Requeue: false}
 }
 
 const (
@@ -67,6 +64,9 @@ const (
 
 	errUnhealthyPackageRevision     = "current package revision is unhealthy"
 	errUnknownPackageRevisionHealth = "current package revision health is unknown"
+
+	errCreateK8sClient = "failed to initialize clientset"
+	errBuildFetcher    = "cannot build fetcher"
 )
 
 // Event reasons.
@@ -137,23 +137,27 @@ type Reconciler struct {
 }
 
 // SetupProvider adds a controller that reconciles Providers.
-func SetupProvider(mgr ctrl.Manager, l logging.Logger, namespace, registry string) error {
+func SetupProvider(mgr ctrl.Manager, o controller.Options) error {
 	name := "packages/" + strings.ToLower(v1.ProviderGroupKind)
 	np := func() v1.Package { return &v1.Provider{} }
 	nr := func() v1.PackageRevision { return &v1.ProviderRevision{} }
 	nrl := func() v1.PackageRevisionList { return &v1.ProviderRevisionList{} }
 
-	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
+	cs, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
-		return errors.Wrap(err, "failed to initialize clientset")
+		return errors.Wrap(err, errCreateK8sClient)
+	}
+	f, err := xpkg.NewK8sFetcher(cs, o.Namespace, o.FetcherOptions...)
+	if err != nil {
+		return errors.Wrap(err, errBuildFetcher)
 	}
 
 	r := NewReconciler(mgr,
 		WithNewPackageFn(np),
 		WithNewPackageRevisionFn(nr),
 		WithNewPackageRevisionListFn(nrl),
-		WithRevisioner(NewPackageRevisioner(xpkg.NewK8sFetcher(clientset, namespace), WithDefaultRegistry(registry))),
-		WithLogger(l.WithValues("controller", name)),
+		WithRevisioner(NewPackageRevisioner(f, WithDefaultRegistry(o.DefaultRegistry))),
+		WithLogger(o.Logger.WithValues("controller", name)),
 		WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
 	)
 
@@ -161,11 +165,12 @@ func SetupProvider(mgr ctrl.Manager, l logging.Logger, namespace, registry strin
 		Named(name).
 		For(&v1.Provider{}).
 		Owns(&v1.ProviderRevision{}).
-		Complete(r)
+		WithOptions(o.ForControllerRuntime()).
+		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
 }
 
 // SetupConfiguration adds a controller that reconciles Configurations.
-func SetupConfiguration(mgr ctrl.Manager, l logging.Logger, namespace, registry string) error {
+func SetupConfiguration(mgr ctrl.Manager, o controller.Options) error {
 	name := "packages/" + strings.ToLower(v1.ConfigurationGroupKind)
 	np := func() v1.Package { return &v1.Configuration{} }
 	nr := func() v1.PackageRevision { return &v1.ConfigurationRevision{} }
@@ -175,13 +180,17 @@ func SetupConfiguration(mgr ctrl.Manager, l logging.Logger, namespace, registry 
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize clientset")
 	}
+	fetcher, err := xpkg.NewK8sFetcher(clientset, o.Namespace, o.FetcherOptions...)
+	if err != nil {
+		return errors.Wrap(err, "cannot build fetcher")
+	}
 
 	r := NewReconciler(mgr,
 		WithNewPackageFn(np),
 		WithNewPackageRevisionFn(nr),
 		WithNewPackageRevisionListFn(nrl),
-		WithRevisioner(NewPackageRevisioner(xpkg.NewK8sFetcher(clientset, namespace), WithDefaultRegistry(registry))),
-		WithLogger(l.WithValues("controller", name)),
+		WithRevisioner(NewPackageRevisioner(fetcher, WithDefaultRegistry(o.DefaultRegistry))),
+		WithLogger(o.Logger.WithValues("controller", name)),
 		WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
 	)
 
@@ -189,7 +198,8 @@ func SetupConfiguration(mgr ctrl.Manager, l logging.Logger, namespace, registry 
 		Named(name).
 		For(&v1.Configuration{}).
 		Owns(&v1.ConfigurationRevision{}).
-		Complete(r)
+		WithOptions(o.ForControllerRuntime()).
+		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
 }
 
 // NewReconciler creates a new package reconciler.
@@ -221,8 +231,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	p := r.newPackage()
 	if err := r.client.Get(ctx, req.NamespacedName, p); err != nil {
-		// There's no need to requeue if we no longer exist. Otherwise we'll be
-		// requeued implicitly because we return an error.
+		// There's no need to requeue if we no longer exist. Otherwise
+		// we'll be requeued implicitly because we return an error.
 		log.Debug(errGetPackage, "error", err)
 		return reconcile.Result{}, errors.Wrap(resource.IgnoreNotFound(err), errGetPackage)
 	}
@@ -237,22 +247,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	prs := r.newPackageRevisionList()
 	if err := r.client.List(ctx, prs, client.MatchingLabels(map[string]string{v1.LabelParentPackage: p.GetName()})); resource.IgnoreNotFound(err) != nil {
 		log.Debug(errListRevisions, "error", err)
-		r.record.Event(p, event.Warning(reasonList, errors.Wrap(err, errListRevisions)))
-		return reconcile.Result{RequeueAfter: shortWait}, nil
+		err = errors.Wrap(err, errListRevisions)
+		r.record.Event(p, event.Warning(reasonList, err))
+		return reconcile.Result{}, err
 	}
 
 	revisionName, err := r.pkg.Revision(ctx, p)
 	if err != nil {
-		p.SetConditions(v1.Unpacking())
 		log.Debug(errUnpack, "error", err)
-		r.record.Event(p, event.Warning(reasonUnpack, errors.Wrap(err, errUnpack)))
-		return reconcile.Result{RequeueAfter: shortWait}, errors.Wrap(r.client.Status().Update(ctx, p), errUpdateStatus)
+		err = errors.Wrap(err, errUnpack)
+		r.record.Event(p, event.Warning(reasonUnpack, err))
+		return reconcile.Result{}, err
 	}
 
 	if revisionName == "" {
 		p.SetConditions(v1.Unpacking())
 		r.record.Event(p, event.Normal(reasonUnpack, "Waiting for unpack to complete"))
-		return reconcile.Result{RequeueAfter: veryShortWait}, errors.Wrap(r.client.Status().Update(ctx, p), errUpdateStatus)
+		return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, p), errUpdateStatus)
 	}
 
 	// Set the current revision and identifier.
@@ -274,28 +285,30 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			maxRevision = revisionNum
 		}
 
-		// Set oldest revision to the lowest numbered revision and record its
-		// index.
+		// Set oldest revision to the lowest numbered revision and
+		// record its index.
 		if revisionNum < oldestRevision {
 			oldestRevision = revisionNum
 			oldestRevisionIndex = index
 		}
-		// If revision name is same as current revision, then revision already exists.
+		// If revision name is same as current revision, then revision
+		// already exists.
 		if rev.GetName() == p.GetCurrentRevision() {
 			pr = rev
-			// Finish iterating through all revisions to make sure all
-			// non-current revisions are inactive.
+			// Finish iterating through all revisions to make sure
+			// all non-current revisions are inactive.
 			continue
 		}
 		if rev.GetDesiredState() == v1.PackageRevisionActive {
-			// If revision is not the current revision, set to inactive. This
-			// should always be done, regardless of the package's revision
-			// activation policy.
+			// If revision is not the current revision, set to
+			// inactive. This should always be done, regardless of
+			// the package's revision activation policy.
 			rev.SetDesiredState(v1.PackageRevisionInactive)
 			if err := r.client.Apply(ctx, rev, resource.MustBeControllableBy(p.GetUID())); err != nil {
 				log.Debug(errUpdateInactivePackageRevision, "error", err)
-				r.record.Event(p, event.Warning(reasonTransitionRevision, errors.Wrap(err, errUpdateInactivePackageRevision)))
-				return reconcile.Result{RequeueAfter: shortWait}, errors.Wrap(r.client.Status().Update(ctx, p), errUpdateStatus)
+				err = errors.Wrap(err, errUpdateInactivePackageRevision)
+				r.record.Event(p, event.Warning(reasonTransitionRevision, err))
+				return reconcile.Result{}, err
 			}
 		}
 	}
@@ -313,8 +326,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// Find the oldest revision and delete it.
 		if err := r.client.Delete(ctx, gcRev); err != nil {
 			log.Debug(errGCPackageRevision, "error", err)
-			r.record.Event(p, event.Warning(reasonGarbageCollect, errors.Wrap(err, errGCPackageRevision)))
-			return reconcile.Result{RequeueAfter: shortWait}, errors.Wrap(r.client.Status().Update(ctx, p), errUpdateStatus)
+			err = errors.Wrap(err, errGCPackageRevision)
+			r.record.Event(p, event.Warning(reasonGarbageCollect, err))
+			return reconcile.Result{}, err
 		}
 	}
 
@@ -341,8 +355,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	pr.SetSkipDependencyResolution(p.GetSkipDependencyResolution())
 	pr.SetControllerConfigRef(p.GetControllerConfigRef())
 
-	// If current revision is not active and we have an automatic or undefined
-	// activation policy, always activate.
+	// If current revision is not active and we have an automatic or
+	// undefined activation policy, always activate.
 	if pr.GetDesiredState() != v1.PackageRevisionActive && (p.GetActivationPolicy() == nil || *p.GetActivationPolicy() == v1.AutomaticActivation) {
 		pr.SetDesiredState(v1.PackageRevisionActive)
 	}
@@ -352,8 +366,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	meta.AddOwnerReference(pr, controlRef)
 	if err := r.client.Apply(ctx, pr, resource.MustBeControllableBy(p.GetUID())); err != nil {
 		log.Debug(errApplyPackageRevision, "error", err)
-		r.record.Event(p, event.Warning(reasonInstall, errors.Wrap(err, errApplyPackageRevision)))
-		return reconcile.Result{RequeueAfter: shortWait}, errors.Wrap(r.client.Status().Update(ctx, p), errUpdateStatus)
+		err = errors.Wrap(err, errApplyPackageRevision)
+		r.record.Event(p, event.Warning(reasonInstall, err))
+		return reconcile.Result{}, err
 	}
 
 	p.SetConditions(v1.Active())

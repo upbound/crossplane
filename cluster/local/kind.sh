@@ -21,7 +21,7 @@ function copy_image_to_cluster() {
     local final_image=$2
     local kind_name=$3
     docker tag "${build_image}" "${final_image}"
-    kind --name "${kind_name}" load docker-image "${final_image}"
+    ${KIND} --name "${kind_name}" load docker-image "${final_image}"
     echo "Tagged image: ${final_image}"
 }
 
@@ -42,7 +42,6 @@ function check_context() {
 }
 
 # configure kind
-KUBE_IMAGE=${KUBE_IMAGE:-"kindest/node:v1.16.15"}
 KIND_NAME=${KIND_NAME:-"kind"}
 case "${1:-}" in
   up)

@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/pkg/errors"
 	rbacv1 "k8s.io/api/rbac/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/fake"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
@@ -72,7 +72,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		"GetCompositeResourceDefinitionError": {
-			reason: "We should return any other error encountered while getting an CompositeResourceDefinition.",
+			reason: "We should return any other error encountered while getting a CompositeResourceDefinition.",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -108,7 +108,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		"ApplyClusterRoleError": {
-			reason: "We should requeue when an error is encountered applying a ClusterRole.",
+			reason: "We should return errors encountered while applying a ClusterRole.",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -126,7 +126,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: shortWait},
+				err: errors.Wrap(errBoom, errApplyRole),
 			},
 		},
 		"SuccessfulNoOp": {

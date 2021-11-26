@@ -71,10 +71,13 @@ and their default values.
 | `image.tag` | Image tag | `master` |
 | `image.pullPolicy` | Image pull policy used in all containers | `IfNotPresent` |
 | `imagePullSecrets` | Names of image pull secrets to use | `dockerhub` |
+| `registryCaBundleConfig.name` | Name of ConfigMap containing additional CA bundle for fetching from package registries  | `{}` |
+| `registryCaBundleConfig.key` | Key to use from ConfigMap containing additional CA bundle for fetching from package registries | `{}` |
 | `replicas` | The number of replicas to run for the Crossplane pods | `1` |
 | `deploymentStrategy` | The deployment strategy for the Crossplane and RBAC Manager (if enabled) pods | `RollingUpdate` |
 | `leaderElection` | Enable leader election for Crossplane Managers pod | `true` |
 | `nodeSelector` | Enable nodeSelector for Crossplane pod | `{}` |
+| `customLabels` | Custom labels to add into metadata | `{}` |
 | `priorityClassName` | Priority class name for Crossplane and RBAC Manager (if enabled) pods | `""` |
 | `resourcesCrossplane.limits.cpu` | CPU resource limits for Crossplane | `100m` |
 | `resourcesCrossplane.limits.memory` | Memory resource limits for Crossplane | `512Mi` |
