@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
@@ -100,7 +100,7 @@ func TestPublishConnection(t *testing.T) {
 			},
 		},
 		"SuccessfulPublish": {
-			reason: "if the secret changed we should publish it.",
+			reason: "If the secret changed we should publish it.",
 			args: args{
 				applicator: resource.ApplyFn(func(_ context.Context, o client.Object, _ ...resource.ApplyOption) error {
 					want := resource.ConnectionSecretFor(owner, owner.GetObjectKind().GroupVersionKind())
@@ -113,6 +113,25 @@ func TestPublishConnection(t *testing.T) {
 				o:      owner,
 				c:      managed.ConnectionDetails{"cool": {42}, "onlyme": {41}},
 				filter: []string{"onlyme"},
+			},
+			want: want{
+				published: true,
+			},
+		},
+		"SuccessfulPublishAllWithEmptyList": {
+			reason: "We should publish all keys if the filter is empty.",
+			args: args{
+				applicator: resource.ApplyFn(func(_ context.Context, o client.Object, _ ...resource.ApplyOption) error {
+					want := resource.ConnectionSecretFor(owner, owner.GetObjectKind().GroupVersionKind())
+					want.Data = managed.ConnectionDetails{"cool": {42}, "onlyme": {41}}
+					if diff := cmp.Diff(want, o); diff != "" {
+						t.Errorf("-want, +got:\n%s", diff)
+					}
+					return nil
+				}),
+				o:      owner,
+				c:      managed.ConnectionDetails{"cool": {42}, "onlyme": {41}},
+				filter: []string{},
 			},
 			want: want{
 				published: true,

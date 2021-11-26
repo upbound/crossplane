@@ -11,7 +11,7 @@ spec:
   writeConnectionSecretsToNamespace: crossplane-system
   compositeTypeRef:
     apiVersion: database.example.org/v1alpha1
-    kind: CompositePostgreSQLInstance
+    kind: XPostgreSQLInstance
   resources:
     - name: vpc
       base:
@@ -86,7 +86,7 @@ spec:
               matchControllerRef: true
     - name: routetable
       base:
-        apiVersion: ec2.aws.crossplane.io/v1alpha4
+        apiVersion: ec2.aws.crossplane.io/v1beta1
         kind: RouteTable
         spec:
           forProvider:

@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/fake"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/claim"
@@ -71,11 +71,11 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{},
+				r: reconcile.Result{Requeue: false},
 			},
 		},
 		"GetCompositeError": {
-			reason: "We should requeue after a short wait if we encounter an error while getting the referenced composite resource",
+			reason: "We should return any error we encounter while getting the referenced composite resource",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -96,7 +96,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: aShortWait},
+				err: errors.Wrap(errBoom, errGetComposite),
 			},
 		},
 		"CompositeAlreadyDeleted": {
@@ -160,7 +160,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		"DeleteCompositeError": {
-			reason: "We should requeue after a short wait if we encounter an error while deleting the referenced composite resource",
+			reason: "We should return any error we encounter while deleting the referenced composite resource",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -185,11 +185,11 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: aShortWait},
+				err: errors.Wrap(errBoom, errDeleteComposite),
 			},
 		},
 		"RemoveFinalizerError": {
-			reason: "We should requeue after a short wait if we encounter an error while removing the claim's finalizer",
+			reason: "We should return any error we encounter while removing the claim's finalizer",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -212,7 +212,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: aShortWait},
+				err: errors.Wrap(errBoom, errRemoveFinalizer),
 			},
 		},
 		"SuccessfulDelete": {
@@ -243,7 +243,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		"AddFinalizerError": {
-			reason: "We should requeue after a short wait if we encounter an error while adding the claim's finalizer",
+			reason: "We should return any error we encounter while adding the claim's finalizer",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -263,11 +263,11 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: aShortWait},
+				err: errors.Wrap(errBoom, errAddFinalizer),
 			},
 		},
 		"ConfigureError": {
-			reason: "We should requeue after a short wait if we encounter an error configuring the composite resource",
+			reason: "We should return any error we encounter configuring the composite resource",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -288,11 +288,11 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: aShortWait},
+				err: errors.Wrap(errBoom, errConfigureComposite),
 			},
 		},
 		"BindError": {
-			reason: "We should requeue after a short wait if we encounter an error binding the composite resource",
+			reason: "We should return any error we encounter binding the composite resource",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -315,11 +315,11 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: aShortWait},
+				err: errors.Wrap(errBoom, errBindComposite),
 			},
 		},
 		"ApplyError": {
-			reason: "We should requeue after a short wait if we encounter an error applying the composite resource",
+			reason: "We should return any error we encounter applying the composite resource",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -344,11 +344,11 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: aShortWait},
+				err: errors.Wrap(errBoom, errApplyComposite),
 			},
 		},
 		"ClaimConfigureError": {
-			reason: "We should requeue after a short wait if we encounter an error configuring the claim resource",
+			reason: "We should return any error we encounter configuring the claim resource",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -375,7 +375,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: aShortWait},
+				err: errors.Wrap(errBoom, errConfigureClaim),
 			},
 		},
 		"CompositeNotReady": {
@@ -406,11 +406,11 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{},
+				r: reconcile.Result{Requeue: false},
 			},
 		},
 		"PropagateConnectionError": {
-			reason: "We should requeue after a short wait if an error is encountered while propagating the bound composite's connection details",
+			reason: "We should return any error we encounter while propagating the bound composite's connection details",
 			args: args{
 				mgr: &fake.Manager{},
 				opts: []ReconcilerOption{
@@ -443,7 +443,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: aShortWait},
+				err: errors.Wrap(errBoom, errPropagateCDs),
 			},
 		},
 		"SuccessfulPropagate": {

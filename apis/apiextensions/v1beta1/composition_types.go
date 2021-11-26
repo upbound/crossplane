@@ -310,11 +310,47 @@ type MapTransform struct {
 	Pairs map[string]string `json:",inline"`
 }
 
+// StringTransformType is type of the string transform function to be executed fmt/convert.
+type StringTransformType string
+
+// Accepted StringTransformType.
+const (
+	StringTransformFormat     StringTransformType = "Format" // Default
+	StringTransformConvert    StringTransformType = "Convert"
+	StringTransformTrimPrefix StringTransformType = "TrimPrefix"
+	StringTransformTrimSuffix StringTransformType = "TrimSuffix"
+)
+
+// StringConversionType is the type of string conversion, ToUpper/ToLower
+type StringConversionType string
+
+// ConversionType accepted values.
+const (
+	ConversionTypeToUpper = "ToUpper"
+	ConversionTypeToLower = "ToLower"
+)
+
 // A StringTransform returns a string given the supplied input.
 type StringTransform struct {
+	// Type of the string transform to be run.
+	// +optional
+	// +kubebuilder:validation:Enum=Format;Convert;TrimPrefix;TrimSuffix
+	// +kubebuilder:default=Format
+	Type StringTransformType `json:"type,omitempty"`
+
 	// Format the input using a Go format string. See
 	// https://golang.org/pkg/fmt/ for details.
-	Format string `json:"fmt"`
+	// +optional
+	Format *string `json:"fmt,omitempty"`
+
+	// Convert the type of conversion to Upper/Lower case.
+	// +optional
+	// +kubebuilder:validation:Enum=ToUpper;ToLower
+	Convert *StringConversionType `json:"convert,omitempty"`
+
+	// Trim the prefix or suffix from the input
+	// +optional
+	Trim *string `json:"trim,omitempty"`
 }
 
 // A ConvertTransform converts the input into a new object whose type is supplied.
