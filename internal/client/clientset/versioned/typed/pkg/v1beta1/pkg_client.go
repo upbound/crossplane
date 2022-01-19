@@ -19,6 +19,8 @@ limitations under the License.
 package v1beta1
 
 import (
+	"net/http"
+
 	v1beta1 "github.com/crossplane/crossplane/apis/pkg/v1beta1"
 	"github.com/crossplane/crossplane/internal/client/clientset/versioned/scheme"
 	rest "k8s.io/client-go/rest"
@@ -26,11 +28,7 @@ import (
 
 type PkgV1beta1Interface interface {
 	RESTClient() rest.Interface
-	ConfigurationsGetter
-	ConfigurationRevisionsGetter
 	LocksGetter
-	ProvidersGetter
-	ProviderRevisionsGetter
 }
 
 // PkgV1beta1Client is used to interact with features provided by the pkg.crossplane.io group.
@@ -38,33 +36,33 @@ type PkgV1beta1Client struct {
 	restClient rest.Interface
 }
 
-func (c *PkgV1beta1Client) Configurations() ConfigurationInterface {
-	return newConfigurations(c)
-}
-
-func (c *PkgV1beta1Client) ConfigurationRevisions() ConfigurationRevisionInterface {
-	return newConfigurationRevisions(c)
-}
-
 func (c *PkgV1beta1Client) Locks() LockInterface {
 	return newLocks(c)
 }
 
-func (c *PkgV1beta1Client) Providers() ProviderInterface {
-	return newProviders(c)
-}
-
-func (c *PkgV1beta1Client) ProviderRevisions() ProviderRevisionInterface {
-	return newProviderRevisions(c)
-}
-
 // NewForConfig creates a new PkgV1beta1Client for the given config.
+// NewForConfig is equivalent to NewForConfigAndClient(c, httpClient),
+// where httpClient was generated with rest.HTTPClientFor(c).
 func NewForConfig(c *rest.Config) (*PkgV1beta1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
 	}
-	client, err := rest.RESTClientFor(&config)
+	httpClient, err := rest.HTTPClientFor(&config)
+	if err != nil {
+		return nil, err
+	}
+	return NewForConfigAndClient(&config, httpClient)
+}
+
+// NewForConfigAndClient creates a new PkgV1beta1Client for the given config and http client.
+// Note the http client provided takes precedence over the configured transport values.
+func NewForConfigAndClient(c *rest.Config, h *http.Client) (*PkgV1beta1Client, error) {
+	config := *c
+	if err := setConfigDefaults(&config); err != nil {
+		return nil, err
+	}
+	client, err := rest.RESTClientForConfigAndClient(&config, h)
 	if err != nil {
 		return nil, err
 	}
