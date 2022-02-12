@@ -480,6 +480,11 @@ kubectl apply -f https://raw.githubusercontent.com/crossplane/crossplane/release
 </div>
 <!-- End Cloud Provider Tabs -->
 
+## Next Steps
+
+Now that you have configured Crossplane with support for `PostgreSQLInstance`,
+you can [provision infrastructure].
+
 </div>
 <!-- End Upstream Tab -->
 
@@ -504,11 +509,6 @@ Slack][Slack] and our community will highlight it here!</i>
 
 </div>
 <!-- End Distro Tabs -->
-
-## Next Steps
-
-Now that you have configured Crossplane with support for `PostgreSQLInstance`,
-you can [provision infrastructure].
 
 ## More Info
 
@@ -539,6 +539,6 @@ you can [provision infrastructure].
 [Upbound documentation]: https://cloud.upbound.io/docs
 [Providers]: ../concepts/providers.md
 [Universal Crossplane]: https://cloud.upbound.io/docs/uxp
-[Get started with Universal Crossplane]: https://cloud.upbound.io/docs/getting-started/
+[Get started with Universal Crossplane]: https://cloud.upbound.io/docs/getting-started/install-and-setup
 [certified by the CNCF]: https://github.com/cncf/crossplane-conformance
 [Crossplane GitHub]: https://github.com/crossplane/crossplane
