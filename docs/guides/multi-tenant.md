@@ -192,7 +192,7 @@ infrastructure admins by both Kubernetes and Crossplane.
 
 Building on our simple `XMySQLInstance` / `MySQLInstance` example, a platform
 builder may choose to define permissions on `MySQLInstance` at the namespace
-scope using a `Role`. This allows for giving users the ability to create and and
+scope using a `Role`. This allows for giving users the ability to create and
 manage `MySQLInstances` in their given namespace, but not the ability to see
 those defined in other namespaces.
 
@@ -287,7 +287,7 @@ Crossplane with the flag to automatically install a Configuration package
 alongside it.
 
 ```
-helm install crossplane --namespace crossplane-system crossplane-stable/crossplane --set configuration.packages={"registry.upbound.io/xp/getting-started-with-aws:v1.5.0"}
+helm install crossplane --namespace crossplane-system crossplane-stable/crossplane --set configuration.packages={"registry.upbound.io/xp/getting-started-with-aws:v1.5.1"}
 ```
 
 ### Control Plane of Control Planes
