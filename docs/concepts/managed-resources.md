@@ -63,7 +63,7 @@ spec:
 ```
 
 ```console
-kubectl apply -f https://raw.githubusercontent.com/crossplane/crossplane/master/docs/snippets/provision/aws.yaml
+kubectl apply -f https://raw.githubusercontent.com/crossplane/crossplane/release-1.7/docs/snippets/provision/aws.yaml
 ```
 
 Creating the above instance will cause Crossplane to provision an RDS instance
@@ -99,7 +99,7 @@ metadata:
   name: cloudsqlpostgresql
 spec:
   forProvider:
-    databaseVersion: POSTGRES_9_6
+    databaseVersion: POSTGRES_12
     region: us-central1
     settings:
       tier: db-custom-1-3840
@@ -111,7 +111,7 @@ spec:
 ```
 
 ```console
-kubectl apply -f https://raw.githubusercontent.com/crossplane/crossplane/master/docs/snippets/provision/gcp.yaml
+kubectl apply -f https://raw.githubusercontent.com/crossplane/crossplane/release-1.7/docs/snippets/provision/gcp.yaml
 ```
 
 Creating the above instance will cause Crossplane to provision a CloudSQL
@@ -177,7 +177,7 @@ spec:
 ```
 
 ```console
-kubectl apply -f https://raw.githubusercontent.com/crossplane/crossplane/master/docs/snippets/provision/azure.yaml
+kubectl apply -f https://raw.githubusercontent.com/crossplane/crossplane/release-1.7/docs/snippets/provision/azure.yaml
 ```
 
 Creating the above instance will cause Crossplane to provision a PostgreSQL
@@ -361,7 +361,7 @@ a string in a specific format that includes other information such as resource
 group name.
 
 In Crossplane, users have 3 fields to refer to another resource. Here is an
-example from Azure MySQL managed resource referring to a Azure Resource Group:
+example from Azure MySQL managed resource referring to an Azure Resource Group:
 
 ```yaml
 spec:

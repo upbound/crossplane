@@ -31,10 +31,12 @@ type CompositeResourceDefinitionSpec struct {
 	// Group specifies the API group of the defined composite resource.
 	// Composite resources are served under `/apis/<group>/...`. Must match the
 	// name of the XRD (in the form `<names.plural>.<group>`).
+	// +immutable
 	Group string `json:"group"`
 
 	// Names specifies the resource and kind names of the defined composite
 	// resource.
+	// +immutable
 	Names extv1.CustomResourceDefinitionNames `json:"names"`
 
 	// ClaimNames specifies the names of an optional composite resource claim.
@@ -45,6 +47,7 @@ type CompositeResourceDefinitionSpec struct {
 	// create, update, or delete a corresponding composite resource. You may add
 	// claim names to an existing CompositeResourceDefinition, but they cannot
 	// be changed or removed once they have been set.
+	// +immutable
 	// +optional
 	ClaimNames *extv1.CustomResourceDefinitionNames `json:"claimNames,omitempty"`
 
@@ -97,6 +100,16 @@ type CompositeResourceDefinitionVersion struct {
 
 	// Served specifies that this version should be served via REST APIs.
 	Served bool `json:"served"`
+
+	// The deprecated field specifies that this version is deprecated and should
+	// not be used.
+	// +optional
+	Deprecated *bool `json:"deprecated,omitempty"`
+
+	// DeprecationWarning specifies the message that should be shown to the user
+	// when using this version.
+	// +optional
+	DeprecationWarning *string `json:"deprecationWarning,omitempty"`
 
 	// Schema describes the schema used for validation, pruning, and defaulting
 	// of this version of the defined composite resource. Fields required by all
