@@ -9,7 +9,6 @@ aggregationRule:
   clusterRoleSelectors:
   - matchLabels:
       rbac.crossplane.io/aggregate-to-crossplane: "true"
-rules: []
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -51,11 +50,13 @@ rules:
   - ""
   resources:
   - serviceaccounts
+  - services
   verbs:
   - "*"
 - apiGroups:
   - apiextensions.crossplane.io
   - pkg.crossplane.io
+  - secrets.crossplane.io
   resources:
   - "*"
   verbs:
@@ -79,6 +80,19 @@ rules:
   resources:
   - configmaps
   - leases
+  verbs:
+  - get
+  - list
+  - create
+  - update
+  - patch
+  - watch
+  - delete
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfigurations
+  - mutatingwebhookconfigurations
   verbs:
   - get
   - list
