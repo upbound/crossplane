@@ -21,6 +21,7 @@ import (
 	"github.com/crossplane/crossplane/internal/xpkg"
 
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
+	"github.com/crossplane/crossplane-runtime/pkg/feature"
 )
 
 // Options specific to pkg controllers.
@@ -28,7 +29,7 @@ type Options struct {
 	controller.Options
 
 	// Cache for package OCI images.
-	Cache xpkg.Cache
+	Cache xpkg.PackageCache
 
 	// Namespace used to unpack and run packages.
 	Namespace string
@@ -39,4 +40,12 @@ type Options struct {
 	// FetcherOptions can be used to add optional parameters to
 	// NewK8sFetcher.
 	FetcherOptions []xpkg.FetcherOpt
+
+	// WebhookTLSSecretName is the Secret that will be mounted to provider Pods
+	// so that they can use it to serve webhooks and also the CA bundle will be
+	// injected to CRDs so that API server can make calls to the providers.
+	WebhookTLSSecretName string
+
+	// Features that should be enabled.
+	Features *feature.Flags
 }
