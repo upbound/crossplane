@@ -40,7 +40,7 @@ of Crossplane managed resources. Following is an example of a managed resource:
 <div class="tab-content">
 <div class="tab-pane fade in active" id="aws-tab-1" markdown="1">
 
-The AWS provider supports provisioning an [RDS] instance via the `RDSInstance`
+The AWS provider supports provisioning an [RDS][rds] instance via the `RDSInstance`
 managed resource it adds to Crossplane.
 
 ```yaml
@@ -89,7 +89,7 @@ kubectl delete rdsinstance rdspostgresql
 </div>
 <div class="tab-pane fade" id="gcp-tab-1" markdown="1">
 
-The GCP provider supports provisioning a [CloudSQL] instance with the
+The GCP provider supports provisioning a [CloudSQL][cloudsql] instance with the
 `CloudSQLInstance` managed resource it adds to Crossplane.
 
 ```yaml
@@ -99,7 +99,7 @@ metadata:
   name: cloudsqlpostgresql
 spec:
   forProvider:
-    databaseVersion: POSTGRES_9_6
+    databaseVersion: POSTGRES_12
     region: us-central1
     settings:
       tier: db-custom-1-3840
@@ -361,7 +361,7 @@ a string in a specific format that includes other information such as resource
 group name.
 
 In Crossplane, users have 3 fields to refer to another resource. Here is an
-example from Azure MySQL managed resource referring to a Azure Resource Group:
+example from Azure MySQL managed resource referring to an Azure Resource Group:
 
 ```yaml
 spec:
@@ -438,6 +438,8 @@ using needs to store `annotations` and `spec` fields, which most tools do
 including Velero.
 
 [term-xrm]: terminology.md#crossplane-resource-model
+[rds]: https://aws.amazon.com/rds/
+[cloudsql]: https://cloud.google.com/sql
 [composition]: composition.md
 [api-versioning]: https://kubernetes.io/docs/reference/using-api/api-overview/#api-versioning
 [velero]: https://velero.io/
