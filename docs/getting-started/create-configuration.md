@@ -321,7 +321,7 @@ spec:
             dbInstanceClass: db.t2.small
             masterUsername: masteruser
             engine: postgres
-            engineVersion: "9.6"
+            engineVersion: "12"
             skipFinalSnapshotBeforeDeletion: true
             publiclyAccessible: true
           writeConnectionSecretToRef:
@@ -369,7 +369,7 @@ spec:
         kind: CloudSQLInstance
         spec:
           forProvider:
-            databaseVersion: POSTGRES_9_6
+            databaseVersion: POSTGRES_12
             region: us-central1
             settings:
               tier: db-custom-1-3840
@@ -571,10 +571,10 @@ metadata:
     vpc: default
 spec:
   crossplane:
-    version: ">=v1.2.0-0"
+    version: ">=v1.4.0-0"
   dependsOn:
     - provider: crossplane/provider-aws
-      version: "v0.18.2"
+      version: ">=v0.18.2"
 ```
 
 ```console
@@ -591,7 +591,7 @@ you may specify a specific package by using the `-f` flag.
 ```console
 # Set this to the Docker Hub username or OCI registry you wish to use.
 REG=my-package-repo
-kubectl crossplane push configuration ${REG}/getting-started-with-aws:v1.6.3
+kubectl crossplane push configuration ${REG}/getting-started-with-aws:v1.6.7
 ```
 
 > Note that the Crossplane CLI will not follow symbolic links for files in the
@@ -611,10 +611,10 @@ metadata:
     vpc: new
 spec:
   crossplane:
-    version: ">=v1.2.0-0"
+    version: ">=v1.4.0-0"
   dependsOn:
     - provider: crossplane/provider-aws
-      version: "v0.18.2"
+      version: ">=v0.18.2"
 ```
 
 ```console
@@ -631,7 +631,7 @@ you may specify a specific package by using the `-f` flag.
 ```console
 # Set this to the Docker Hub username or OCI registry you wish to use.
 REG=my-package-repo
-kubectl crossplane push configuration ${REG}/getting-started-with-aws-with-vpc:v1.6.3
+kubectl crossplane push configuration ${REG}/getting-started-with-aws-with-vpc:v1.6.7
 ```
 
 > Note that the Crossplane CLI will not follow symbolic links for files in the
@@ -650,7 +650,7 @@ metadata:
     provider: gcp
 spec:
   crossplane:
-    version: ">=v1.0.0-0"
+    version: ">=v1.4.0-0"
   dependsOn:
     - provider: crossplane/provider-gcp
       version: ">=v0.13.0"
@@ -670,7 +670,7 @@ you may specify a specific package by using the `-f` flag.
 ```console
 # Set this to the Docker Hub username or OCI registry you wish to use.
 REG=my-package-repo
-kubectl crossplane push configuration ${REG}/getting-started-with-gcp:v1.6.3
+kubectl crossplane push configuration ${REG}/getting-started-with-gcp:v1.6.7
 ```
 
 > Note that the Crossplane CLI will not follow symbolic links for files in the
@@ -689,7 +689,7 @@ metadata:
     provider: azure
 spec:
   crossplane:
-    version: ">=v1.0.0-0"
+    version: ">=v1.4.0-0"
   dependsOn:
     - provider: crossplane/provider-azure
       version: ">=v0.13.0"
@@ -709,7 +709,7 @@ you may specify a specific package by using the `-f` flag.
 ```console
 # Set this to the Docker Hub username or OCI registry you wish to use.
 REG=my-package-repo
-kubectl crossplane push configuration ${REG}/getting-started-with-azure:v1.6.3
+kubectl crossplane push configuration ${REG}/getting-started-with-azure:v1.6.7
 ```
 
 > Note that the Crossplane CLI will not follow symbolic links for files in the
