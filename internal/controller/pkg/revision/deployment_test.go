@@ -151,6 +151,10 @@ func deployment(provider *pkgmetav1.Provider, revision string, img string, modif
 										},
 									},
 								},
+								{
+									Name:  upboundCTXEnv,
+									Value: upboundCTXValue,
+								},
 							},
 						},
 					},
