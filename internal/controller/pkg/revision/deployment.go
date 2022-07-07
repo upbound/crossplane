@@ -51,6 +51,9 @@ const (
 	webhookPortName         = "webhook"
 	webhookPort             = 9443
 
+	upboundCTXEnv   = "UPBOUND_CONTEXT"
+	upboundCTXValue = "uxp"
+
 	essTLSCertDirEnvVar = "ESS_TLS_CERTS_DIR"
 	essCertsVolumeName  = "ess-client-certs"
 	essCertsDir         = "/ess/tls"
@@ -131,6 +134,10 @@ func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRe
 											FieldPath: "metadata.namespace",
 										},
 									},
+								},
+								{
+									Name:  upboundCTXEnv,
+									Value: upboundCTXValue,
 								},
 							},
 						},
