@@ -41,6 +41,9 @@ var (
 const (
 	promPortName   = "metrics"
 	promPortNumber = 8080
+
+	upboundCTXEnv   = "UPBOUND_CONTEXT"
+	upboundCTXValue = "uxp"
 )
 
 func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRevision, cc *v1alpha1.ControllerConfig, namespace string) (*corev1.ServiceAccount, *appsv1.Deployment) { // nolint:interfacer,gocyclo
@@ -102,6 +105,12 @@ func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRe
 								{
 									Name:          promPortName,
 									ContainerPort: promPortNumber,
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name:  upboundCTXEnv,
+									Value: upboundCTXValue,
 								},
 							},
 						},
