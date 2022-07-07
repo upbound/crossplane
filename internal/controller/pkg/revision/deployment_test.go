@@ -84,6 +84,12 @@ func deployment(provider *pkgmetav1.Provider, revision string, img string, modif
 									ContainerPort: promPortNumber,
 								},
 							},
+							Env: []corev1.EnvVar{
+								{
+									Name:  upboundCTXEnv,
+									Value: upboundCTXValue,
+								},
+							},
 						},
 					},
 				},
