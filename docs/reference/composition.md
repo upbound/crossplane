@@ -405,6 +405,34 @@ field.
   toFieldPath: status.zone
 ```
 
+`FromCompositeFieldPath` and `ToCompositeFieldPath` patches can also take a wildcarded
+field path in the `toFieldPath` parameter and patch each array element in the `toFieldPath`
+with the singular value provided in the `fromFieldPath`.
+
+```yaml
+# Patch from the XR's spec.parameters.allowedIPs to the CIDRBlock elements
+# inside the array spec.forProvider.firewallRules on the composed resource.
+resources:
+- name: exampleFirewall
+  base:
+    apiVersion: firewall.example.crossplane.io/v1beta1
+    kind: Firewall
+    spec:
+      forProvider:
+        firewallRules:
+        - Action: "Allow"
+          Destination: "example1"
+          CIDRBlock: ""
+        - Action: "Allow"
+          Destination: "example2"
+          CIDRBlock: ""
+- type: FromCompositeFieldPath
+  fromFieldPath: spec.parameters.allowedIP
+  toFieldPath: spec.forProvider.firewallRules[*].CIDRBlock
+```
+
+Note that the field to be patched requires some initial value to be set.
+
 `CombineFromComposite`. Combines multiple fields from the XR to produce one
 composed resource field.
 
@@ -498,6 +526,7 @@ Currently only `multiply` is supported.
 * string transform type `Convert`, accepts one of `ToUpper`, `ToLower`, `ToBase64`, `FromBase64`.
 * string transform type `TrimPrefix`, accepts a string to be trimmed from the beginning of the input.
 * string transform type `TrimSuffix`, accepts a string to be trimmed from the end of the input.
+* string transform type `Regexp`, accepts a string for regexp to be applied to.
 
 ```yaml
 # If you omit the field type, by default type is set to `Format` 
@@ -555,6 +584,15 @@ Currently only `multiply` is supported.
   string:
      type: TrimSuffix
      trim: '-test'
+
+# If the value of the 'from' field is 'arn:aws:iam::42:example, the value of the
+# 'to' field will be set to "42". Note that the 'to' field is always a string. 
+- type: string
+  string:
+     type: Regexp
+     regexp:
+      match: 'arn:aws:iam::(\d+):.*'
+      group: 1  # Optional capture group. Omit to match the entire regexp.
 ```
 
 `convert`. Transforms values of one type to another, for example from a string

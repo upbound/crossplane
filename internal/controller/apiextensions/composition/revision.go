@@ -58,7 +58,10 @@ func NewCompositionRevisionSpec(cs v1.CompositionSpec, revision int64) v1alpha1.
 		PatchSets:                         make([]v1alpha1.PatchSet, len(cs.PatchSets)),
 		Resources:                         make([]v1alpha1.ComposedTemplate, len(cs.Resources)),
 		WriteConnectionSecretsToNamespace: cs.WriteConnectionSecretsToNamespace,
-		PublishConnectionDetailsWithStoreConfigRef: cs.PublishConnectionDetailsWithStoreConfigRef,
+	}
+
+	if cs.PublishConnectionDetailsWithStoreConfigRef != nil {
+		rs.PublishConnectionDetailsWithStoreConfigRef = &v1alpha1.StoreConfigReference{Name: cs.PublishConnectionDetailsWithStoreConfigRef.Name}
 	}
 
 	for i := range cs.PatchSets {
@@ -161,7 +164,25 @@ func NewCompositionRevisionTransform(t v1.Transform) v1alpha1.Transform {
 		rt.Map = &v1alpha1.MapTransform{Pairs: t.Map.Pairs}
 	}
 	if t.String != nil {
-		rt.String = &v1alpha1.StringTransform{Format: *t.String.Format}
+		rt.String = &v1alpha1.StringTransform{Type: v1alpha1.StringTransformType(t.String.Type)}
+		if t.String.Format != nil {
+			rt.String.Format = t.String.Format
+		}
+		if t.String.Convert != nil {
+			rt.String.Convert = func() *v1alpha1.StringConversionType {
+				t := v1alpha1.StringConversionType(*t.String.Convert)
+				return &t
+			}()
+		}
+		if t.String.Trim != nil {
+			rt.String.Trim = t.String.Trim
+		}
+		if t.String.Regexp != nil {
+			rt.String.Regexp = &v1alpha1.StringTransformRegexp{
+				Match: t.String.Regexp.Match,
+				Group: t.String.Regexp.Group,
+			}
+		}
 	}
 	if t.Convert != nil {
 		rt.Convert = &v1alpha1.ConvertTransform{ToType: t.Convert.ToType}
