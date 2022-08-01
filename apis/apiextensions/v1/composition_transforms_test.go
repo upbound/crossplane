@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
+	"k8s.io/utils/pointer"
 
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 )
@@ -29,10 +30,10 @@ import (
 func TestMapResolve(t *testing.T) {
 	type args struct {
 		m map[string]string
-		i interface{}
+		i any
 	}
 	type want struct {
-		o   interface{}
+		o   any
 		err error
 	}
 
@@ -85,10 +86,10 @@ func TestMathResolve(t *testing.T) {
 
 	type args struct {
 		multiplier *int64
-		i          interface{}
+		i          any
 	}
 	type want struct {
-		o   interface{}
+		o   any
 		err error
 	}
 
@@ -153,16 +154,17 @@ func TestStringResolve(t *testing.T) {
 		fmts    *string
 		convert *StringConversionType
 		trim    *string
-		i       interface{}
+		regexp  *StringTransformRegexp
+		i       any
 	}
 	type want struct {
-		o   interface{}
+		o   any
 		err error
 	}
 	sFmt := "verycool%s"
 	iFmt := "the largest %d"
 
-	var upper, lower, tobase64, frombase64, wrongConvertType StringConversionType = ConversionTypeToUpper, ConversionTypeToLower, ConversionTypeToBase64, ConversionTypeFromBase64, "Something"
+	var upper, lower, tobase64, frombase64, wrongConvertType StringConversionType = StringConversionTypeToUpper, StringConversionTypeToLower, StringConversionTypeToBase64, StringConversionTypeFromBase64, "Something"
 
 	prefix := "https://"
 	suffix := "-test"
@@ -182,16 +184,16 @@ func TestStringResolve(t *testing.T) {
 		},
 		"FmtFailed": {
 			args: args{
-				stype: StringTransformFormat,
+				stype: StringTransformTypeFormat,
 				i:     "value",
 			},
 			want: want{
-				err: errors.Errorf(errStringTransformTypeFormat, string(StringTransformFormat)),
+				err: errors.Errorf(errStringTransformTypeFormat, string(StringTransformTypeFormat)),
 			},
 		},
 		"FmtString": {
 			args: args{
-				stype: StringTransformFormat,
+				stype: StringTransformTypeFormat,
 				fmts:  &sFmt,
 				i:     "thing",
 			},
@@ -201,7 +203,7 @@ func TestStringResolve(t *testing.T) {
 		},
 		"FmtInteger": {
 			args: args{
-				stype: StringTransformFormat,
+				stype: StringTransformTypeFormat,
 				fmts:  &iFmt,
 				i:     8,
 			},
@@ -211,16 +213,16 @@ func TestStringResolve(t *testing.T) {
 		},
 		"ConvertNotSet": {
 			args: args{
-				stype: StringTransformConvert,
+				stype: StringTransformTypeConvert,
 				i:     "crossplane",
 			},
 			want: want{
-				err: errors.Errorf(errStringTransformTypeConvert, string(StringTransformConvert)),
+				err: errors.Errorf(errStringTransformTypeConvert, string(StringTransformTypeConvert)),
 			},
 		},
 		"ConvertTypFailed": {
 			args: args{
-				stype:   StringTransformConvert,
+				stype:   StringTransformTypeConvert,
 				convert: &wrongConvertType,
 				i:       "crossplane",
 			},
@@ -230,7 +232,7 @@ func TestStringResolve(t *testing.T) {
 		},
 		"ConvertToUpper": {
 			args: args{
-				stype:   StringTransformConvert,
+				stype:   StringTransformTypeConvert,
 				convert: &upper,
 				i:       "crossplane",
 			},
@@ -240,7 +242,7 @@ func TestStringResolve(t *testing.T) {
 		},
 		"ConvertToLower": {
 			args: args{
-				stype:   StringTransformConvert,
+				stype:   StringTransformTypeConvert,
 				convert: &lower,
 				i:       "CrossPlane",
 			},
@@ -250,7 +252,7 @@ func TestStringResolve(t *testing.T) {
 		},
 		"ConvertToBase64": {
 			args: args{
-				stype:   StringTransformConvert,
+				stype:   StringTransformTypeConvert,
 				convert: &tobase64,
 				i:       "CrossPlane",
 			},
@@ -260,7 +262,7 @@ func TestStringResolve(t *testing.T) {
 		},
 		"ConvertFromBase64": {
 			args: args{
-				stype:   StringTransformConvert,
+				stype:   StringTransformTypeConvert,
 				convert: &frombase64,
 				i:       "Q3Jvc3NQbGFuZQ==",
 			},
@@ -270,7 +272,7 @@ func TestStringResolve(t *testing.T) {
 		},
 		"ConvertFromBase64Error": {
 			args: args{
-				stype:   StringTransformConvert,
+				stype:   StringTransformTypeConvert,
 				convert: &frombase64,
 				i:       "ThisStringIsNotBase64",
 			},
@@ -281,7 +283,7 @@ func TestStringResolve(t *testing.T) {
 		},
 		"TrimPrefix": {
 			args: args{
-				stype: StringTransformTrimPrefix,
+				stype: StringTransformTypeTrimPrefix,
 				trim:  &prefix,
 				i:     "https://crossplane.io",
 			},
@@ -291,7 +293,7 @@ func TestStringResolve(t *testing.T) {
 		},
 		"TrimSuffix": {
 			args: args{
-				stype: StringTransformTrimSuffix,
+				stype: StringTransformTypeTrimSuffix,
 				trim:  &suffix,
 				i:     "my-string-test",
 			},
@@ -301,7 +303,7 @@ func TestStringResolve(t *testing.T) {
 		},
 		"TrimPrefixWithoutMatch": {
 			args: args{
-				stype: StringTransformTrimPrefix,
+				stype: StringTransformTypeTrimPrefix,
 				trim:  &prefix,
 				i:     "crossplane.io",
 			},
@@ -311,12 +313,62 @@ func TestStringResolve(t *testing.T) {
 		},
 		"TrimSuffixWithoutMatch": {
 			args: args{
-				stype: StringTransformTrimSuffix,
+				stype: StringTransformTypeTrimSuffix,
 				trim:  &suffix,
 				i:     "my-string",
 			},
 			want: want{
 				o: "my-string",
+			},
+		},
+		"RegexpNotCompiling": {
+			args: args{
+				stype: StringTransformTypeRegexp,
+				regexp: &StringTransformRegexp{
+					Match: "[a-z",
+				},
+				i: "my-string",
+			},
+			want: want{
+				err: errors.Wrap(errors.New("error parsing regexp: missing closing ]: `[a-z`"), errStringTransformTypeRegexpFailed),
+			},
+		},
+		"RegexpSimpleMatch": {
+			args: args{
+				stype: StringTransformTypeRegexp,
+				regexp: &StringTransformRegexp{
+					Match: "[0-9]",
+				},
+				i: "my-1-string",
+			},
+			want: want{
+				o: "1",
+			},
+		},
+		"RegexpCaptureGroup": {
+			args: args{
+				stype: StringTransformTypeRegexp,
+				regexp: &StringTransformRegexp{
+					Match: "my-([0-9]+)-string",
+					Group: pointer.Int(1),
+				},
+				i: "my-1-string",
+			},
+			want: want{
+				o: "1",
+			},
+		},
+		"RegexpNoSuchCaptureGroup": {
+			args: args{
+				stype: StringTransformTypeRegexp,
+				regexp: &StringTransformRegexp{
+					Match: "my-([0-9]+)-string",
+					Group: pointer.Int(2),
+				},
+				i: "my-1-string",
+			},
+			want: want{
+				err: errors.Errorf(errStringTransformTypeRegexpNoMatch, "my-([0-9]+)-string", 2),
 			},
 		},
 	}
@@ -326,6 +378,7 @@ func TestStringResolve(t *testing.T) {
 				Format:  tc.fmts,
 				Convert: tc.convert,
 				Trim:    tc.trim,
+				Regexp:  tc.regexp,
 			}).Resolve(tc.i)
 
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
@@ -341,10 +394,10 @@ func TestStringResolve(t *testing.T) {
 func TestConvertResolve(t *testing.T) {
 	type args struct {
 		ot string
-		i  interface{}
+		i  any
 	}
 	type want struct {
-		o   interface{}
+		o   any
 		err error
 	}
 

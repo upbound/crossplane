@@ -74,15 +74,22 @@ type CompositionRevisionSpec struct {
 	WriteConnectionSecretsToNamespace *string `json:"writeConnectionSecretsToNamespace,omitempty"`
 
 	// PublishConnectionDetailsWithStoreConfig specifies the secret store config
-	// with which the connection secrets of composite resource dynamically
+	// with which the connection details of composite resources dynamically
 	// provisioned using this composition will be published.
 	// +optional
 	// +kubebuilder:default={"name": "default"}
-	PublishConnectionDetailsWithStoreConfigRef *xpv1.Reference `json:"publishConnectionDetailsWithStoreConfigRef,omitempty"`
+	PublishConnectionDetailsWithStoreConfigRef *StoreConfigReference `json:"publishConnectionDetailsWithStoreConfigRef,omitempty"`
 
 	// Revision number. Newer revisions have larger numbers.
 	// +immutable
 	Revision int64 `json:"revision"`
+}
+
+// A StoreConfigReference references a secret store config that may be used to
+// write connection details.
+type StoreConfigReference struct {
+	// Name of the referenced StoreConfig.
+	Name string `json:"name"`
 }
 
 // A PatchSet is a set of patches that can be reused from all resources within
@@ -395,7 +402,7 @@ func (m MapTransform) MarshalJSON() ([]byte, error) {
 }
 
 // Resolve runs the Map transform.
-func (m *MapTransform) Resolve(input interface{}) (interface{}, error) {
+func (m *MapTransform) Resolve(input any) (any, error) {
 	switch i := input.(type) {
 	case string:
 		val, ok := m.Pairs[i]
@@ -408,25 +415,43 @@ func (m *MapTransform) Resolve(input interface{}) (interface{}, error) {
 	}
 }
 
-// StringTransformType is type of the string transform function to be executed fmt/convert.
+// A StringTransformType transforms a string.
 type StringTransformType string
 
-// StringConversionType is the type of string conversion, ToUpper/ToLower/ToBase64/FromBase64
+// Accepted StringTransformTypes.
+const (
+	StringTransformTypeFormat     StringTransformType = "Format" // Default
+	StringTransformTypeConvert    StringTransformType = "Convert"
+	StringTransformTypeTrimPrefix StringTransformType = "TrimPrefix"
+	StringTransformTypeTrimSuffix StringTransformType = "TrimSuffix"
+	StringTransformTypeRegexp     StringTransformType = "Regexp"
+)
+
+// A StringConversionType converts a string.
 type StringConversionType string
+
+// Accepted StringConversionTypes.
+const (
+	StringConversionTypeToUpper    StringConversionType = "ToUpper"
+	StringConversionTypeToLower    StringConversionType = "ToLower"
+	StringConversionTypeToBase64   StringConversionType = "ToBase64"
+	StringConversionTypeFromBase64 StringConversionType = "FromBase64"
+)
 
 // A StringTransform returns a string given the supplied input.
 type StringTransform struct {
 
 	// Type of the string transform to be run.
 	// +optional
-	// +kubebuilder:validation:Enum=Format;Convert;TrimPrefix;TrimSuffix
+	// +kubebuilder:validation:Enum=Format;Convert;TrimPrefix;TrimSuffix;Regexp
 	// +kubebuilder:default=Format
 	Type StringTransformType `json:"type,omitempty"`
 
 	// Format the input using a Go format string. See
 	// https://golang.org/pkg/fmt/ for details.
+	// +optional
 	// +immutable
-	Format string `json:"fmt,omitempty"`
+	Format *string `json:"fmt,omitempty"`
 
 	// Convert the type of conversion to Upper/Lower case.
 	// +optional
@@ -436,7 +461,32 @@ type StringTransform struct {
 	// Trim the prefix or suffix from the input
 	// +optional
 	Trim *string `json:"trim,omitempty"`
+
+	// Extract a match from the input using a regular expression.
+	// +optional
+	Regexp *StringTransformRegexp `json:"regexp,omitempty"`
 }
+
+// A StringTransformRegexp extracts a match from the input using a regular
+// expression.
+type StringTransformRegexp struct {
+	// Match string. May optionally include submatches, aka capture groups.
+	// See https://pkg.go.dev/regexp/ for details.
+	Match string `json:"match"`
+
+	// Group number to match. 0 (the default) matches the entire expression.
+	// +optional
+	Group *int `json:"group,omitempty"`
+}
+
+// The list of supported ConvertTransform input and output types.
+const (
+	ConvertTransformTypeString  = "string"
+	ConvertTransformTypeBool    = "bool"
+	ConvertTransformTypeInt     = "int"
+	ConvertTransformTypeInt64   = "int64"
+	ConvertTransformTypeFloat64 = "float64"
+)
 
 // A ConvertTransform converts the input into a new object whose type is supplied.
 type ConvertTransform struct {
