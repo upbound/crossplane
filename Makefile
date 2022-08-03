@@ -42,6 +42,15 @@ HELM3_VERSION = v3.6.3
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================
+# Setup Helm
+
+HELM_BASE_URL = https://charts.crossplane.io
+HELM_S3_BUCKET = crossplane.charts
+HELM_CHARTS = crossplane
+HELM_CHART_LINT_ARGS_crossplane = --set nameOverride='',imagePullSecrets=''
+-include build/makelib/helm.mk
+
+# ====================================================================================
 # Setup Images
 # Due to the way that the shared build logic works, images should
 # all be in folders at the same level (no additional levels of nesting).
