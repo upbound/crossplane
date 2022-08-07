@@ -49,6 +49,9 @@ const (
 	webhookTLSCertDir       = "/webhook/tls"
 	webhookPortName         = "webhook"
 	webhookPort             = 9443
+
+	upboundCTXEnv   = "UPBOUND_CONTEXT"
+	upboundCTXValue = "uxp"
 )
 
 func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRevision, cc *v1alpha1.ControllerConfig, namespace string) (*corev1.ServiceAccount, *appsv1.Deployment, *corev1.Service) { // nolint:gocyclo
@@ -124,6 +127,10 @@ func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRe
 											FieldPath: "metadata.namespace",
 										},
 									},
+								},
+								{
+									Name:  upboundCTXEnv,
+									Value: upboundCTXValue,
 								},
 							},
 						},
