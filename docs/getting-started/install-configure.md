@@ -243,7 +243,7 @@ provider that can satisfy a `PostgreSQLInstance`. Let's get started!
 > section.
 
 ```console
-kubectl crossplane install configuration registry.upbound.io/xp/getting-started-with-aws:v1.8.1
+kubectl crossplane install configuration registry.upbound.io/xp/getting-started-with-aws:v1.8.2
 ```
 
 Wait until all packages become healthy:
@@ -300,7 +300,7 @@ kubectl apply -f https://raw.githubusercontent.com/crossplane/crossplane/release
 > section.
 
 ```console
-kubectl crossplane install configuration registry.upbound.io/xp/getting-started-with-aws-with-vpc:v1.8.1
+kubectl crossplane install configuration registry.upbound.io/xp/getting-started-with-aws-with-vpc:v1.8.2
 ```
 
 Wait until all packages become healthy:
@@ -357,7 +357,7 @@ kubectl apply -f https://raw.githubusercontent.com/crossplane/crossplane/release
 > section.
 
 ```console
-kubectl crossplane install configuration registry.upbound.io/xp/getting-started-with-gcp:v1.8.1
+kubectl crossplane install configuration registry.upbound.io/xp/getting-started-with-gcp:v1.8.2
 ```
 
 Wait until all packages become healthy:
@@ -430,7 +430,7 @@ spec:
 > section.
 
 ```console
-kubectl crossplane install configuration registry.upbound.io/xp/getting-started-with-azure:v1.8.1
+kubectl crossplane install configuration registry.upbound.io/xp/getting-started-with-azure:v1.8.2
 ```
 
 Wait until all packages become healthy:
@@ -539,6 +539,6 @@ Slack][Slack] and our community will highlight it here!</i>
 [Upbound documentation]: https://cloud.upbound.io/docs
 [Providers]: ../concepts/providers.md
 [Universal Crossplane]: https://cloud.upbound.io/docs/uxp
-[Get started with Universal Crossplane]: https://cloud.upbound.io/docs/getting-started/install-and-setup
+[Get started with Universal Crossplane]: https://cloud.upbound.io/docs/uxp/install
 [certified by the CNCF]: https://github.com/cncf/crossplane-conformance
 [Crossplane GitHub]: https://github.com/crossplane/crossplane
