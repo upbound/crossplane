@@ -31,24 +31,3 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         github_workspace: ${{ github.workspace }}
         version: v0.0.4
-
-  fresh:
-    runs-on: ubuntu-20.04
-    if: startsWith(github.event.comment.body, '/fresh')
-
-    steps:
-    - name: Extract Command
-      id: command
-      uses: xt0rted/slash-command-action@v1
-      with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-        command: fresh
-        reaction: "true"
-        reaction-type: "eyes"
-        allow-edits: "false"
-        permission-level: read
-    - name: Handle Command
-      uses: actions-ecosystem/action-remove-labels@v1
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        labels: stale
