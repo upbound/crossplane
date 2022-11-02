@@ -76,6 +76,7 @@ const (
 	reasonCompositeConfigure event.Reason = "ConfigureCompositeResource"
 	reasonClaimConfigure     event.Reason = "ConfigureClaim"
 	reasonPropagate          event.Reason = "PropagateConnectionSecret"
+	reasonPaused             event.Reason = "ReconciliationPaused"
 )
 
 // ControllerName returns the recommended name for controllers that use this
@@ -343,6 +344,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		"external-name", meta.GetExternalName(cm),
 	)
 
+	// Check the pause annotation and return if it has the value "true"
+	// after logging, publishing an event and updating the SYNC status condition
+	if meta.IsPaused(cm) {
+		log.Debug("Reconciliation is paused via the pause annotation", "annotation", meta.AnnotationKeyReconciliationPaused, "value", "true")
+		r.record.Event(cm, event.Normal(reasonPaused, "Reconciliation is paused via the pause annotation"))
+		cm.SetConditions(xpv1.ReconcilePaused())
+		// If the pause annotation is removed, we will have a chance to reconcile again and resume
+		// and if status update fails, we will reconcile again to retry to update the status
+		return reconcile.Result{}, errors.Wrap(r.client.Status().Update(ctx, cm), errUpdateClaimStatus)
+	}
+
 	cp := r.newComposite()
 	if ref := cm.GetResourceReference(); ref != nil {
 		record = record.WithAnnotations("composite-name", cm.GetResourceReference().Name)
@@ -362,6 +374,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 		cm.SetConditions(xpv1.Deleting())
 		if meta.WasCreated(cp) {
+			if meta.WasDeleted(cp) {
+				if *cm.GetCompositeDeletePolicy() == xpv1.CompositeDeleteForeground {
+					log.Debug("Waiting for the Composite to finish deleting (foreground deletion)")
+					return reconcile.Result{Requeue: true}, nil
+				}
+			}
 			ref := cp.GetClaimReference()
 			want := meta.ReferenceTo(cm, cm.GetObjectKind().GroupVersionKind())
 			if !cmp.Equal(want, ref, cmpopts.IgnoreFields(corev1.ObjectReference{}, "UID")) {
@@ -378,12 +396,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 				return reconcile.Result{Requeue: false}, errors.Wrap(r.client.Status().Update(ctx, cm), errUpdateClaimStatus)
 			}
 
-			if err := r.client.Delete(ctx, cp); resource.IgnoreNotFound(err) != nil {
+			do := &client.DeleteOptions{}
+			if *cm.GetCompositeDeletePolicy() == xpv1.CompositeDeleteForeground {
+				client.PropagationPolicy(metav1.DeletePropagationForeground).ApplyToDelete(do)
+			}
+			if err := r.client.Delete(ctx, cp, do); resource.IgnoreNotFound(err) != nil {
 				log.Debug(errDeleteComposite, "error", err)
 				err = errors.Wrap(err, errDeleteComposite)
 				record.Event(cm, event.Warning(reasonDelete, err))
 				cm.SetConditions(xpv1.ReconcileError(err))
 				return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, cm), errUpdateClaimStatus)
+			}
+			if *cm.GetCompositeDeletePolicy() == xpv1.CompositeDeleteForeground {
+				log.Debug("Requeue to wait for the Composite to finish deleting (foreground deletion)")
+				return reconcile.Result{Requeue: true}, nil
 			}
 		}
 

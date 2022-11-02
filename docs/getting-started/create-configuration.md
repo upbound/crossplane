@@ -1,11 +1,7 @@
 ---
 title: Create a Configuration
-toc: true
 weight: 4
-indent: true
 ---
-
-# Create a Configuration
 
 In the [previous section] we were able to create a PostgreSQL database because
 we had installed a configuration package that defined the `PostgreSQLInstance`
@@ -573,7 +569,7 @@ spec:
   crossplane:
     version: ">=v1.4.0-0"
   dependsOn:
-    - provider: crossplane/provider-aws
+    - provider: xpkg.upbound.io/crossplane-contrib/provider-aws
       version: ">=v0.18.2"
 ```
 
@@ -613,7 +609,7 @@ spec:
   crossplane:
     version: ">=v1.4.0-0"
   dependsOn:
-    - provider: crossplane/provider-aws
+    - provider: xpkg.upbound.io/crossplane-contrib/provider-aws
       version: ">=v0.18.2"
 ```
 
@@ -652,7 +648,7 @@ spec:
   crossplane:
     version: ">=v1.4.0-0"
   dependsOn:
-    - provider: crossplane/provider-gcp
+    - provider: xpkg.upbound.io/crossplane-contrib/provider-gcp
       version: ">=v0.13.0"
 ```
 
@@ -691,7 +687,7 @@ spec:
   crossplane:
     version: ">=v1.4.0-0"
   dependsOn:
-    - provider: crossplane/provider-azure
+    - provider: xpkg.upbound.io/crossplane-contrib/provider-azure
       version: ">=v0.13.0"
 ```
 
@@ -733,9 +729,9 @@ rm -rf crossplane-config
 
 <!-- Named Links -->
 
-[previous section]: provision-infrastructure.md
-[composed]: ../concepts/composition.md
-[composition]: ../concepts/composition.md
+[previous section]: {{<ref "provision-infrastructure" >}}
+[composed]: {{<ref "../concepts/composition" >}}
+[composition]: {{<ref "../concepts/composition" >}}
 [Docker Hub]: https://hub.docker.com/
-[packages]: ../concepts/packages.md
-[concepts]: ../concepts/overview.md
+[packages]: {{<ref "../concepts/packages" >}}
+[concepts]: {{<ref "../concepts" >}}
