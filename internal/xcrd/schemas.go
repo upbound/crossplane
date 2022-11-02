@@ -27,7 +27,7 @@ const (
 
 // PropagateSpecProps is the list of XRC spec properties to propagate
 // when translating an XRC into an XR and vice-versa.
-var PropagateSpecProps = []string{"compositionRef", "compositionSelector", "compositionRevisionRef", "compositionUpdatePolicy"}
+var PropagateSpecProps = []string{"compositionRef", "compositionSelector", "compositionUpdatePolicy"}
 
 // TODO(negz): Add descriptions to schema fields.
 
@@ -216,6 +216,13 @@ func CompositeResourceClaimSpecProps() map[string]extv1.JSONSchemaProps {
 			},
 			Default: &extv1.JSON{Raw: []byte(`"Automatic"`)},
 		},
+		"compositeDeletePolicy": {
+			Type: "string",
+			Enum: []extv1.JSON{
+				{Raw: []byte(`"Background"`)},
+				{Raw: []byte(`"Foreground"`)},
+			},
+			Default: &extv1.JSON{Raw: []byte(`"Background"`)}},
 		"resourceRef": {
 			Type:     "object",
 			Required: []string{"apiVersion", "kind", "name"},

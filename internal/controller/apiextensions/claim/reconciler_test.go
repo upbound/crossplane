@@ -34,6 +34,7 @@ import (
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/fake"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/claim"
@@ -202,6 +203,8 @@ func TestReconcile(t *testing.T) {
 					o.SetName(name)
 					o.SetDeletionTimestamp(&now)
 					o.SetResourceReference(&corev1.ObjectReference{})
+					bg := xpv1.CompositeDeleteBackground
+					o.SetCompositeDeletePolicy(&bg)
 				}),
 			},
 			want: want{
@@ -211,6 +214,8 @@ func TestReconcile(t *testing.T) {
 					o.SetDeletionTimestamp(&now)
 					o.SetResourceReference(&corev1.ObjectReference{})
 					o.SetConditions(xpv1.Deleting(), xpv1.ReconcileError(errors.Wrap(errBoom, errDeleteComposite)))
+					bg := xpv1.CompositeDeleteBackground
+					o.SetCompositeDeletePolicy(&bg)
 				}),
 				r: reconcile.Result{Requeue: true},
 			},
@@ -251,6 +256,13 @@ func TestReconcile(t *testing.T) {
 					WithClientApplicator(resource.ClientApplicator{
 						Client: &test.MockClient{
 							MockDelete: test.NewMockDeleteFn(nil),
+							MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+								if o, ok := obj.(*composite.Unstructured); ok {
+									o.SetCreationTimestamp(metav1.Now())
+									o.SetClaimReference(&corev1.ObjectReference{Name: name})
+								}
+								return nil
+							}),
 						},
 					}),
 					WithClaimFinalizer(resource.FinalizerFns{
@@ -258,17 +270,104 @@ func TestReconcile(t *testing.T) {
 					}),
 				},
 				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetName(name)
 					o.SetDeletionTimestamp(&now)
+					bg := xpv1.CompositeDeleteBackground
+					o.SetCompositeDeletePolicy(&bg)
 					o.SetResourceReference(&corev1.ObjectReference{})
 				}),
 			},
 			want: want{
 				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetName(name)
 					o.SetDeletionTimestamp(&now)
 					o.SetResourceReference(&corev1.ObjectReference{})
+					bg := xpv1.CompositeDeleteBackground
+					o.SetCompositeDeletePolicy(&bg)
 					o.SetConditions(xpv1.Deleting(), xpv1.ReconcileSuccess())
 				}),
 				r: reconcile.Result{Requeue: false},
+			},
+		},
+		"SuccessfulForegroundDelete": {
+			reason: "We should requeue if we successfully delete the bound composite resource using Foreground deletion",
+			args: args{
+				mgr: &fake.Manager{},
+				opts: []ReconcilerOption{
+					WithClientApplicator(resource.ClientApplicator{
+						Client: &test.MockClient{
+							MockDelete: test.NewMockDeleteFn(nil),
+							MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+								if o, ok := obj.(*composite.Unstructured); ok {
+									o.SetCreationTimestamp(metav1.Now())
+									o.SetClaimReference(&corev1.ObjectReference{Name: name})
+								}
+								return nil
+							}),
+						},
+					}),
+					WithClaimFinalizer(resource.FinalizerFns{
+						RemoveFinalizerFn: func(ctx context.Context, obj resource.Object) error { return nil },
+					}),
+				},
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetName(name)
+					o.SetDeletionTimestamp(&now)
+					fg := xpv1.CompositeDeleteForeground
+					o.SetCompositeDeletePolicy(&fg)
+					o.SetResourceReference(&corev1.ObjectReference{})
+				}),
+			},
+			want: want{
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetName(name)
+					o.SetDeletionTimestamp(&now)
+					o.SetResourceReference(&corev1.ObjectReference{})
+					fg := xpv1.CompositeDeleteForeground
+					o.SetCompositeDeletePolicy(&fg)
+				}),
+				r: reconcile.Result{Requeue: true},
+			},
+		},
+		"ForegroundDeleteWaitForCompositeDeletion": {
+			reason: "We should requeue if we successfully deleted the bound composite resource using Foreground deletion and it has not yet been deleted",
+			args: args{
+				mgr: &fake.Manager{},
+				opts: []ReconcilerOption{
+					WithClientApplicator(resource.ClientApplicator{
+						Client: &test.MockClient{
+							MockDelete: test.NewMockDeleteFn(nil),
+							MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+								if o, ok := obj.(*composite.Unstructured); ok {
+									o.SetCreationTimestamp(now)
+									o.SetDeletionTimestamp(&now)
+									o.SetClaimReference(&corev1.ObjectReference{Name: name})
+								}
+								return nil
+							}),
+						},
+					}),
+					WithClaimFinalizer(resource.FinalizerFns{
+						RemoveFinalizerFn: func(ctx context.Context, obj resource.Object) error { return nil },
+					}),
+				},
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetName(name)
+					o.SetDeletionTimestamp(&now)
+					fg := xpv1.CompositeDeleteForeground
+					o.SetCompositeDeletePolicy(&fg)
+					o.SetResourceReference(&corev1.ObjectReference{})
+				}),
+			},
+			want: want{
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetName(name)
+					o.SetDeletionTimestamp(&now)
+					o.SetResourceReference(&corev1.ObjectReference{})
+					fg := xpv1.CompositeDeleteForeground
+					o.SetCompositeDeletePolicy(&fg)
+				}),
+				r: reconcile.Result{Requeue: true},
 			},
 		},
 		"AddFinalizerError": {
@@ -517,6 +616,132 @@ func TestReconcile(t *testing.T) {
 				r: reconcile.Result{Requeue: false},
 			},
 		},
+		"ReconciliationPausedSuccessful": {
+			reason: `If a composite resource claim has the pause annotation with value "true", there should be no further requeue requests.`,
+			args: args{
+				mgr: &fake.Manager{},
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetAnnotations(map[string]string{meta.AnnotationKeyReconciliationPaused: "true"})
+				}),
+			},
+			want: want{
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetAnnotations(map[string]string{meta.AnnotationKeyReconciliationPaused: "true"})
+					o.SetConditions(xpv1.ReconcilePaused())
+				}),
+			},
+		},
+		"ReconciliationPausedError": {
+			reason: `If a composite resource claim has the pause annotation with value "true" and the status update due to reconciliation being paused fails, error should be reported causing an exponentially backed-off requeue.`,
+			args: args{
+				mgr: &fake.Manager{},
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetAnnotations(map[string]string{meta.AnnotationKeyReconciliationPaused: "true"})
+				}),
+				opts: []ReconcilerOption{
+					WithClientApplicator(resource.ClientApplicator{
+						Client: &test.MockClient{
+							MockStatusUpdate: test.NewMockStatusUpdateFn(errBoom),
+						},
+					}),
+				},
+			},
+			want: want{
+				err: errors.Wrap(errBoom, errUpdateClaimStatus),
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetAnnotations(map[string]string{meta.AnnotationKeyReconciliationPaused: "true"})
+					o.SetConditions(xpv1.ReconcilePaused())
+				}),
+			},
+		},
+		"ReconciliationResumes": {
+			reason: `If a composite resource claim has the pause annotation with some value other than "true" and the Synced=False/ReconcilePaused status condition, claim should acquire Synced=True/ReconcileSuccess.`,
+			args: args{
+				mgr: &fake.Manager{},
+				opts: []ReconcilerOption{
+					WithClientApplicator(resource.ClientApplicator{
+						Client: &test.MockClient{
+							MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+								if o, ok := obj.(*composite.Unstructured); ok {
+									o.SetConditions(xpv1.Available())
+								}
+								return nil
+							}),
+							MockStatusUpdate: test.NewMockStatusUpdateFn(nil),
+						},
+						Applicator: resource.ApplyFn(func(c context.Context, r client.Object, ao ...resource.ApplyOption) error {
+							return nil
+						}),
+					}),
+					WithClaimFinalizer(resource.FinalizerFns{
+						AddFinalizerFn: func(ctx context.Context, obj resource.Object) error { return nil },
+					}),
+					WithCompositeConfigurator(ConfiguratorFn(func(ctx context.Context, cm resource.CompositeClaim, cp resource.Composite) error { return nil })),
+					WithBinder(BinderFn(func(ctx context.Context, cm resource.CompositeClaim, cp resource.Composite) error { return nil })),
+					WithClaimConfigurator(ConfiguratorFn(func(ctx context.Context, cm resource.CompositeClaim, cp resource.Composite) error { return nil })),
+					WithConnectionPropagator(ConnectionPropagatorFn(func(ctx context.Context, to resource.LocalConnectionSecretOwner, from resource.ConnectionSecretOwner) (propagated bool, err error) {
+						return true, nil
+					})),
+				},
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetResourceReference(&corev1.ObjectReference{})
+					o.SetAnnotations(map[string]string{meta.AnnotationKeyReconciliationPaused: ""})
+					o.SetConditions(xpv1.ReconcilePaused())
+				}),
+			},
+			want: want{
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetAnnotations(map[string]string{meta.AnnotationKeyReconciliationPaused: ""})
+					o.SetConditions(xpv1.ReconcileSuccess(), xpv1.Available())
+					o.SetResourceReference(&corev1.ObjectReference{})
+					o.SetConnectionDetailsLastPublishedTime(&now)
+				}),
+			},
+		},
+		"ReconciliationResumesAfterAnnotationRemoval": {
+			reason: `If a composite resource claim has the pause annotation removed and the Synced=False/ReconcilePaused status condition, claim should acquire Synced=True/ReconcileSuccess.`,
+			args: args{
+				mgr: &fake.Manager{},
+				opts: []ReconcilerOption{
+					WithClientApplicator(resource.ClientApplicator{
+						Client: &test.MockClient{
+							MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+								if o, ok := obj.(*composite.Unstructured); ok {
+									o.SetConditions(xpv1.Available())
+								}
+								return nil
+							}),
+							MockStatusUpdate: test.NewMockStatusUpdateFn(nil),
+						},
+						Applicator: resource.ApplyFn(func(c context.Context, r client.Object, ao ...resource.ApplyOption) error {
+							return nil
+						}),
+					}),
+					WithClaimFinalizer(resource.FinalizerFns{
+						AddFinalizerFn: func(ctx context.Context, obj resource.Object) error { return nil },
+					}),
+					WithCompositeConfigurator(ConfiguratorFn(func(ctx context.Context, cm resource.CompositeClaim, cp resource.Composite) error { return nil })),
+					WithBinder(BinderFn(func(ctx context.Context, cm resource.CompositeClaim, cp resource.Composite) error { return nil })),
+					WithClaimConfigurator(ConfiguratorFn(func(ctx context.Context, cm resource.CompositeClaim, cp resource.Composite) error { return nil })),
+					WithConnectionPropagator(ConnectionPropagatorFn(func(ctx context.Context, to resource.LocalConnectionSecretOwner, from resource.ConnectionSecretOwner) (propagated bool, err error) {
+						return true, nil
+					})),
+				},
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetResourceReference(&corev1.ObjectReference{})
+					// no annotation atm
+					// (but reconciliations were already paused)
+					o.SetConditions(xpv1.ReconcilePaused())
+				}),
+			},
+			want: want{
+				claim: withClaim(func(o *claim.Unstructured) {
+					o.SetConditions(xpv1.ReconcileSuccess(), xpv1.Available())
+					o.SetResourceReference(&corev1.ObjectReference{})
+					o.SetConnectionDetailsLastPublishedTime(&now)
+				}),
+			},
+		},
 	}
 
 	for name, tc := range cases {
@@ -541,7 +766,6 @@ func TestReconcile(t *testing.T) {
 					mockStatusUpdate := func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
 						if o, ok := obj.(*claim.Unstructured); ok {
 							o.DeepCopyInto(&tc.args.claim.Unstructured)
-							return nil
 						}
 						if customStatusUpdate != nil {
 							return customStatusUpdate(ctx, obj, opts...)

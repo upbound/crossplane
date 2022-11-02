@@ -28,6 +28,8 @@ NPROCS ?= 1
 # to half the number of CPU cores.
 GO_TEST_PARALLEL := $(shell echo $$(( $(NPROCS) / 2 )))
 
+GO_REQUIRED_VERSION = 1.19
+
 GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/crossplane $(GO_PROJECT)/cmd/crank
 GO_LDFLAGS += -X $(GO_PROJECT)/internal/version.version=$(shell echo $(VERSION) | sed 's/[\.,-]up.*//' )
 GO_SUBDIRS += cmd internal apis
@@ -94,8 +96,8 @@ gen-kustomize-crds:
 	@$(INFO) Adding all CRDs to Kustomize file for local development
 	@rm cluster/kustomization.yaml
 	@echo "# This kustomization can be used to remotely install all Crossplane CRDs" >> cluster/kustomization.yaml
-	@echo "# by running kubectl apply -k https://github.com/crossplane/crossplane//cluster?ref=master" >> cluster/kustomization.yaml 
-	@echo "resources:" >> cluster/kustomization.yaml 
+	@echo "# by running kubectl apply -k https://github.com/crossplane/crossplane//cluster?ref=master" >> cluster/kustomization.yaml
+	@echo "resources:" >> cluster/kustomization.yaml
 	@find $(CRD_DIR) -type f -name '*.yaml' | sort | \
 		while read filename ;\
 		do echo "- $${filename#*/}" >> cluster/kustomization.yaml \
