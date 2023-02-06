@@ -1,4 +1,4 @@
-FROM gcr.io/distroless/static@sha256:d2b0ec3141031720cf5eedef3493b8e129bc91935a43b50562fbe5429878d96b
+FROM gcr.io/distroless/static@sha256:d2e099306ea61cb96017e227dc23efd64a844ccff439c095023e4983cb601f62
 
 ARG TARGETOS
 ARG TARGETARCH

@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package core implements Crossplane's core controller manager.
 package core
 
 import (
@@ -76,12 +77,15 @@ type startCommand struct {
 	PollInterval     time.Duration `help:"How often individual resources will be checked for drift from the desired state." default:"1m"`
 	MaxReconcileRate int           `help:"The global maximum rate per second at which resources may checked for drift from the desired state." default:"10"`
 
-	EnableCompositionRevisions bool `group:"Alpha Features:" help:"Enable support for CompositionRevisions."`
-	EnableExternalSecretStores bool `group:"Alpha Features:" help:"Enable support for ExternalSecretStores."`
+	EnableCompositionRevisions bool `group:"Beta Features:" help:"Enable support for CompositionRevisions." default:"true"`
+
+	EnableEnvironmentConfigs   bool `group:"Alpha Features:" help:"Enable support for EnvironmentConfigs."`
+	EnableExternalSecretStores bool `group:"Alpha Features:" help:"Enable support for External Secret Stores."`
+	EnableCompositionFunctions bool `group:"Alpha Features:" help:"Enable support for Composition Functions."`
 }
 
 // Run core Crossplane controllers.
-func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //nolint:gocyclo
+func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //nolint:gocyclo // Only slightly over (11).
 	cfg, err := ctrl.GetConfig()
 	if err != nil {
 		return errors.Wrap(err, "Cannot get config")
@@ -110,12 +114,20 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 
 	feats := &feature.Flags{}
 	if c.EnableCompositionRevisions {
-		feats.Enable(features.EnableAlphaCompositionRevisions)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaCompositionRevisions)
+		feats.Enable(features.EnableBetaCompositionRevisions)
+		log.Info("Beta feature enabled", "flag", features.EnableBetaCompositionRevisions)
+	}
+	if c.EnableEnvironmentConfigs {
+		feats.Enable(features.EnableAlphaEnvironmentConfigs)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaEnvironmentConfigs)
 	}
 	if c.EnableExternalSecretStores {
 		feats.Enable(features.EnableAlphaExternalSecretStores)
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaExternalSecretStores)
+	}
+	if c.EnableCompositionFunctions {
+		feats.Enable(features.EnableAlphaCompositionFunctions)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaCompositionFunctions)
 	}
 
 	o := controller.Options{

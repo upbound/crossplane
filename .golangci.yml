@@ -27,10 +27,6 @@ linters-settings:
     # report about shadowed variables
     check-shadowing: false
 
-  revive:
-    # confidence for issues, default is 0.8
-    confidence: 0.8
-
   gofmt:
     # simplify code: gofmt with `-s` option, true by default
     simplify: true
@@ -102,6 +98,11 @@ linters-settings:
       rangeValCopy:
         sizeThreshold: 32
 
+  nolintlint:
+    require-explanation: true
+    require-specific: true
+
+
 linters:
   enable:
     - megacheck
@@ -116,6 +117,7 @@ linters:
     - unconvert
     - misspell
     - nakedret
+    - nolintlint
   
   disable:
     # These linters are all deprecated as of golangci-lint v1.49.0. We disable
@@ -181,6 +183,11 @@ issues:
       linters:
       - gosec
       - gas
+    
+    # Some k8s dependencies do not have JSON tags on all fields in structs.
+    - path: k8s.io/
+      linters:
+      - musttag
 
   # Independently from option `exclude` we use default exclude patterns,
   # it can be disabled by this option. To list all

@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package namespace implements the RBAC manager's support for namespaces.
 package namespace
 
 import (
@@ -43,7 +44,7 @@ import (
 const (
 	timeout = 2 * time.Minute
 
-	errGetNamespace = "cannot get CompositeResourceDefinition"
+	errGetNamespace = "cannot get Namespace"
 	errApplyRole    = "cannot apply Roles"
 	errListRoles    = "cannot list ClusterRoles"
 )
