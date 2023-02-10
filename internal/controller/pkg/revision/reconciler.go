@@ -48,6 +48,7 @@ import (
 	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
 	"github.com/crossplane/crossplane/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/internal/dag"
+	"github.com/crossplane/crossplane/internal/features"
 	"github.com/crossplane/crossplane/internal/version"
 	"github.com/crossplane/crossplane/internal/xpkg"
 )
@@ -249,7 +250,7 @@ func SetupProviderRevision(mgr ctrl.Manager, o controller.Options) error {
 		WithHooks(NewProviderHooks(resource.ClientApplicator{
 			Client:     mgr.GetClient(),
 			Applicator: resource.NewAPIPatchingApplicator(mgr.GetClient()),
-		}, o.Namespace, o.ServiceAccount)),
+		}, o.Namespace, o.ServiceAccount, o.Features.Enabled(features.EnableProviderIdentity))),
 		WithEstablisher(NewAPIEstablisher(mgr.GetClient(), o.Namespace)),
 		WithNewPackageRevisionFn(nr),
 		WithParser(parser.New(metaScheme, objScheme)),
