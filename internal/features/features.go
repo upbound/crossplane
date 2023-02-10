@@ -40,4 +40,7 @@ const (
 	// details.
 	// https://github.com/crossplane/crossplane/blob/f32496bed53a393c8239376fd8266ddf2ef84d61/design/design-doc-composition-validating-webhook.md
 	EnableAlphaCompositionWebhookSchemaValidation feature.Flag = "EnableAlphaCompositionWebhookSchemaValidation"
+	// EnableProviderIdentity enables alpha support for Provider identity. This
+	// feature is only available when running on Upbound.
+	EnableProviderIdentity feature.Flag = "EnableProviderIdentity"
 )
