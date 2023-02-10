@@ -104,6 +104,12 @@ type startCommand struct {
 	// folks who are passing them, but they do nothing. The flags are hidden so
 	// they don't show up in the help output.
 	EnableCompositionRevisions bool `default:"true" hidden:""`
+
+	// NOTE(hasheddan): this feature is unlikely to graduate from alpha status
+	// and should be removed when a runtime interface is introduced upstream.
+	// See https://github.com/crossplane/crossplane/issues/2671 for more
+	// information.
+	EnableProviderIdentity bool `group:"Alpha Features:" help:"Enable support for Provider identity."`
 }
 
 // Run core Crossplane controllers.
@@ -185,6 +191,10 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 	}
 	if !c.EnableCompositionRevisions {
 		log.Info("CompositionRevisions feature is GA and cannot be disabled. The --enable-composition-revisions flag will be removed in a future release.")
+	}
+	if c.EnableProviderIdentity {
+		feats.Enable(features.EnableProviderIdentity)
+		log.Info("Alpha feature enabled", "flag", features.EnableProviderIdentity)
 	}
 
 	o := controller.Options{
