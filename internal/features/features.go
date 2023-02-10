@@ -34,9 +34,11 @@ const (
 	// External Secret Stores. See the below design for more details.
 	// https://github.com/crossplane/crossplane/blob/390ddd/design/design-doc-external-secret-stores.md
 	EnableAlphaExternalSecretStores feature.Flag = "EnableAlphaExternalSecretStores"
-
 	// EnableAlphaCompositionFunctions enables alpha support for composition
 	// functions. See the below design for more details.
 	// https://github.com/crossplane/crossplane/blob/9ee7a2/design/design-doc-composition-functions.md
 	EnableAlphaCompositionFunctions feature.Flag = "EnableAlphaCompositionFunctions"
+	// EnableProviderIdentity enables alpha support for Provider identity. This
+	// feature is only available when running on Upbound.
+	EnableProviderIdentity feature.Flag = "EnableProviderIdentity"
 )
