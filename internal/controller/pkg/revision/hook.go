@@ -59,17 +59,19 @@ type Hooks interface {
 // ProviderHooks performs operations for a provider package that requires a
 // controller before and after the revision establishes objects.
 type ProviderHooks struct {
-	client         resource.ClientApplicator
-	namespace      string
-	serviceAccount string
+	client           resource.ClientApplicator
+	namespace        string
+	serviceAccount   string
+	providerIdentity bool
 }
 
 // NewProviderHooks creates a new ProviderHooks.
-func NewProviderHooks(client resource.ClientApplicator, namespace, serviceAccount string) *ProviderHooks {
+func NewProviderHooks(client resource.ClientApplicator, namespace, serviceAccount string, providerIdentity bool) *ProviderHooks {
 	return &ProviderHooks{
-		client:         client,
-		namespace:      namespace,
-		serviceAccount: serviceAccount,
+		client:           client,
+		namespace:        namespace,
+		serviceAccount:   serviceAccount,
+		providerIdentity: providerIdentity,
 	}
 }
 
@@ -98,7 +100,7 @@ func (h *ProviderHooks) Pre(ctx context.Context, pkg runtime.Object, pr v1.Packa
 
 	// NOTE(hasheddan): we avoid fetching pull secrets and controller config as
 	// they aren't needed to delete Deployment, ServiceAccount, and Service.
-	s, d, svc := buildProviderDeployment(pkgProvider, pr, nil, h.namespace, []corev1.LocalObjectReference{})
+	s, d, svc := buildProviderDeployment(pkgProvider, pr, nil, h.namespace, []corev1.LocalObjectReference{}, h.providerIdentity)
 	if err := h.client.Delete(ctx, d); resource.IgnoreNotFound(err) != nil {
 		return errors.Wrap(err, errDeleteProviderDeployment)
 	}
@@ -130,7 +132,7 @@ func (h *ProviderHooks) Post(ctx context.Context, pkg runtime.Object, pr v1.Pack
 	if err != nil {
 		return err
 	}
-	s, d, svc := buildProviderDeployment(pkgProvider, pr, cc, h.namespace, append(pr.GetPackagePullSecrets(), ps...))
+	s, d, svc := buildProviderDeployment(pkgProvider, pr, cc, h.namespace, append(pr.GetPackagePullSecrets(), ps...), h.providerIdentity)
 	if err := h.client.Apply(ctx, s); err != nil {
 		return errors.Wrap(err, errApplyProviderSA)
 	}
