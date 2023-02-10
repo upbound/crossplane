@@ -28,13 +28,11 @@ NPROCS ?= 1
 # to half the number of CPU cores.
 GO_TEST_PARALLEL := $(shell echo $$(( $(NPROCS) / 2 )))
 
-GO_REQUIRED_VERSION = 1.19
-
-GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/crossplane $(GO_PROJECT)/cmd/crank
+GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/crossplane $(GO_PROJECT)/cmd/crank $(GO_PROJECT)/cmd/xfn
 GO_LDFLAGS += -X $(GO_PROJECT)/internal/version.version=$(shell echo $(VERSION) | sed 's/[\.,-]up.*//' )
 GO_SUBDIRS += cmd internal apis
 GO111MODULE = on
-GOLANGCILINT_VERSION = 1.49.0
+GOLANGCILINT_VERSION = 1.51.1
 -include build/makelib/golang.mk
 
 # ====================================================================================
@@ -50,8 +48,7 @@ HELM3_VERSION = v3.6.3
 # all be in folders at the same level (no additional levels of nesting).
 
 REGISTRY_ORGS = docker.io/upbound
-IMAGES = crossplane
-OSBASEIMAGE = gcr.io/distroless/static:nonroot
+IMAGES = crossplane xfn
 -include build/makelib/imagelight.mk
 
 # ====================================================================================
@@ -79,18 +76,12 @@ crds.clean:
 	@find $(CRD_DIR) -name '*.yaml.sed' -delete || $(FAIL)
 	@$(OK) cleaned generated CRDs
 
-generate.run: gen-kustomize-crds gen-install-doc gen-chart-license
+generate.run: gen-kustomize-crds gen-chart-license
 
 gen-chart-license:
 	@cp -f LICENSE cluster/charts/crossplane/LICENSE
 
 generate.done: crds.clean
-
-gen-install-doc:
-	@$(INFO) Generating install documentation from Helm chart
-	@head -7 docs/reference/install.md | cat - cluster/charts/crossplane/README.md > reference-install.tmp
-	@mv reference-install.tmp docs/reference/install.md
-	@$(OK) Successfully generated install documentation
 
 gen-kustomize-crds:
 	@$(INFO) Adding all CRDs to Kustomize file for local development
@@ -164,7 +155,7 @@ run: go.build
 	@# To see other arguments that can be provided, run the command with --help instead
 	$(GO_OUT_DIR)/$(PROJECT_NAME) core start --debug
 
-.PHONY: manifests cobertura submodules fallthrough test-integration run install-crds uninstall-crds gen-kustomize-crds gen-install-doc e2e-tests-compile
+.PHONY: manifests cobertura submodules fallthrough test-integration run install-crds uninstall-crds gen-kustomize-crds e2e-tests-compile
 
 # ====================================================================================
 # Special Targets

@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package revision implements the Crossplane Package Revision controllers.
 package revision
 
 import (
@@ -33,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
@@ -84,6 +86,8 @@ const (
 
 	errRemoveLock  = "cannot remove package revision from Lock"
 	errResolveDeps = "cannot resolve package dependencies"
+
+	errConfResourceObject = "cannot convert to resource.Object"
 )
 
 // Event reasons.
@@ -189,6 +193,12 @@ func WithVersioner(v version.Operations) ReconcilerOption {
 	return func(r *Reconciler) {
 		r.versioner = v
 	}
+}
+
+// uniqueResourceIdentifier returns a unique identifier for a resource in a
+// package, consisting of the group, version, kind, and name.
+func uniqueResourceIdentifier(ref xpv1.TypedReference) string {
+	return strings.Join([]string{ref.GroupVersionKind().String(), ref.Name}, "/")
 }
 
 // Reconciler reconciles packages.
@@ -326,7 +336,7 @@ func NewReconciler(mgr manager.Manager, opts ...ReconcilerOption) *Reconciler {
 }
 
 // Reconcile package revision.
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { // nolint:gocyclo
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocyclo // Reconcilers are often very complex.
 	log := r.log.WithValues("request", req)
 	log.Debug("Reconciling")
 
@@ -454,7 +464,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		pipeR, pipeW := io.Pipe()
 		rc = xpkg.TeeReadCloser(imgrc, pipeW)
 		go func() {
-			defer pipeR.Close() //nolint:errcheck
+			defer pipeR.Close() //nolint:errcheck // Not much we can do if this fails.
 			if err := r.cache.Store(pr.GetName(), pipeR); err != nil {
 				_ = pipeR.CloseWithError(err)
 				cacheWrite <- err
@@ -582,11 +592,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	// Update object list in package revision status with objects for which
 	// ownership or control has been established.
-	// NOTE(hasheddan): the collection of resource references is
-	// non-deterministic due to concurrent establishment, so we perform a stable
-	// sort to avoid constant status changes.
-	sort.SliceStable(refs, func(i, j int) bool {
-		return string(refs[i].UID) < string(refs[j].UID)
+	// NOTE(hasheddan): we avoid the overhead of performing a stable sort here
+	// as we are not concerned with preserving the existing ordering of the
+	// slice, but rather the existing references in the status of the package
+	// revision. We should also not have equivalent references in the slice, but
+	// a poorly formed, but still valid package could contain duplicates.
+	// However, in that case the references would be identical (including UUID),
+	// so unstable sort order would not cause a diff in the package revision
+	// status.
+	// See https://github.com/crossplane/crossplane/issues/3466 for tracking
+	// restricting duplicate resources in packages.
+	sort.Slice(refs, func(i, j int) bool {
+		return uniqueResourceIdentifier(refs[i]) > uniqueResourceIdentifier(refs[j])
 	})
 	pr.SetObjects(refs)
 

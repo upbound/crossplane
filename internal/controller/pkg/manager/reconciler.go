@@ -14,11 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package manager implements the Crossplane Package controllers.
 package manager
 
 import (
 	"context"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 
@@ -43,11 +45,16 @@ import (
 
 const (
 	reconcileTimeout = 1 * time.Minute
+
+	// pullWait is the time after which the package manager will check for
+	// updated content for the given package reference. This behavior is only
+	// enabled when the packagePullPolicy is Always.
+	pullWait = 1 * time.Minute
 )
 
 func pullBasedRequeue(p *corev1.PullPolicy) reconcile.Result {
 	if p != nil && *p == corev1.PullAlways {
-		return reconcile.Result{Requeue: true}
+		return reconcile.Result{RequeueAfter: pullWait}
 	}
 	return reconcile.Result{Requeue: false}
 }
@@ -233,7 +240,7 @@ func NewReconciler(mgr ctrl.Manager, opts ...ReconcilerOption) *Reconciler {
 }
 
 // Reconcile package.
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { // nolint:gocyclo
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocyclo // Reconcilers are complex. Be wary of adding more.
 	log := r.log.WithValues("request", req)
 	log.Debug("Reconciling")
 
@@ -366,6 +373,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	pr.SetSkipDependencyResolution(p.GetSkipDependencyResolution())
 	pr.SetControllerConfigRef(p.GetControllerConfigRef())
 	pr.SetWebhookTLSSecretName(r.webhookTLSSecretName)
+	pr.SetCommonLabels(p.GetCommonLabels())
 
 	// If current revision is not active and we have an automatic or
 	// undefined activation policy, always activate.
@@ -374,13 +382,25 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	controlRef := meta.AsController(meta.TypedReferenceTo(p, p.GetObjectKind().GroupVersionKind()))
-	controlRef.BlockOwnerDeletion = pointer.BoolPtr(true)
+	controlRef.BlockOwnerDeletion = pointer.Bool(true)
 	meta.AddOwnerReference(pr, controlRef)
 	if err := r.client.Apply(ctx, pr, resource.MustBeControllableBy(p.GetUID())); err != nil {
 		log.Debug(errApplyPackageRevision, "error", err)
 		err = errors.Wrap(err, errApplyPackageRevision)
 		r.record.Event(p, event.Warning(reasonInstall, err))
 		return reconcile.Result{}, err
+	}
+
+	// Handle changes in labels
+	same := reflect.DeepEqual(pr.GetCommonLabels(), p.GetCommonLabels())
+	if !same {
+		pr.SetCommonLabels(p.GetCommonLabels())
+		if err := r.client.Update(ctx, pr); err != nil {
+			log.Debug(errApplyPackageRevision, "error", err)
+			err = errors.Wrap(err, errApplyPackageRevision)
+			r.record.Event(p, event.Warning(reasonInstall, err))
+			return reconcile.Result{}, err
+		}
 	}
 
 	p.SetConditions(v1.Active())

@@ -27,7 +27,7 @@ const (
 
 // PropagateSpecProps is the list of XRC spec properties to propagate
 // when translating an XRC into an XR and vice-versa.
-var PropagateSpecProps = []string{"compositionRef", "compositionSelector", "compositionUpdatePolicy"}
+var PropagateSpecProps = []string{"compositionRef", "compositionSelector", "compositionUpdatePolicy", "compositionRevisionSelector"}
 
 // TODO(negz): Add descriptions to schema fields.
 
@@ -92,7 +92,19 @@ func CompositeResourceSpecProps() map[string]extv1.JSONSchemaProps {
 			Properties: map[string]extv1.JSONSchemaProps{
 				"name": {Type: "string"},
 			},
-			Description: "Alpha: This field may be deprecated or changed without notice.",
+		},
+		"compositionRevisionSelector": {
+			Type:     "object",
+			Required: []string{"matchLabels"},
+			Properties: map[string]extv1.JSONSchemaProps{
+				"matchLabels": {
+					Type: "object",
+					AdditionalProperties: &extv1.JSONSchemaPropsOrBool{
+						Allows: true,
+						Schema: &extv1.JSONSchemaProps{Type: "string"},
+					},
+				},
+			},
 		},
 		"compositionUpdatePolicy": {
 			Type: "string",
@@ -100,8 +112,7 @@ func CompositeResourceSpecProps() map[string]extv1.JSONSchemaProps {
 				{Raw: []byte(`"Automatic"`)},
 				{Raw: []byte(`"Manual"`)},
 			},
-			Default:     &extv1.JSON{Raw: []byte(`"Automatic"`)},
-			Description: "Alpha: This field may be deprecated or changed without notice.",
+			Default: &extv1.JSON{Raw: []byte(`"Automatic"`)},
 		},
 		"claimRef": {
 			Type:     "object",
@@ -111,6 +122,20 @@ func CompositeResourceSpecProps() map[string]extv1.JSONSchemaProps {
 				"kind":       {Type: "string"},
 				"namespace":  {Type: "string"},
 				"name":       {Type: "string"},
+			},
+		},
+		"environmentConfigRefs": {
+			Type: "array",
+			Items: &extv1.JSONSchemaPropsOrArray{
+				Schema: &extv1.JSONSchemaProps{
+					Type: "object",
+					Properties: map[string]extv1.JSONSchemaProps{
+						"apiVersion": {Type: "string"},
+						"name":       {Type: "string"},
+						"kind":       {Type: "string"},
+					},
+					Required: []string{"apiVersion", "kind"},
+				},
 			},
 		},
 		"resourceRefs": {
@@ -206,6 +231,19 @@ func CompositeResourceClaimSpecProps() map[string]extv1.JSONSchemaProps {
 			Required: []string{"name"},
 			Properties: map[string]extv1.JSONSchemaProps{
 				"name": {Type: "string"},
+			},
+		},
+		"compositionRevisionSelector": {
+			Type:     "object",
+			Required: []string{"matchLabels"},
+			Properties: map[string]extv1.JSONSchemaProps{
+				"matchLabels": {
+					Type: "object",
+					AdditionalProperties: &extv1.JSONSchemaPropsOrBool{
+						Allows: true,
+						Schema: &extv1.JSONSchemaProps{Type: "string"},
+					},
+				},
 			},
 		},
 		"compositionUpdatePolicy": {

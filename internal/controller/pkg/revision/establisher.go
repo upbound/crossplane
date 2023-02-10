@@ -101,6 +101,10 @@ type currentDesired struct {
 // Establish checks that control or ownership of resources can be established by
 // parent, then establishes it.
 func (e *APIEstablisher) Establish(ctx context.Context, objs []runtime.Object, parent v1.PackageRevision, control bool) ([]xpv1.TypedReference, error) {
+	err := e.addLabels(objs, parent)
+	if err != nil {
+		return nil, err
+	}
 	allObjs, err := e.validate(ctx, objs, parent, control)
 	if err != nil {
 		return nil, err
@@ -113,7 +117,27 @@ func (e *APIEstablisher) Establish(ctx context.Context, objs []runtime.Object, p
 	return resourceRefs, nil
 }
 
-func (e *APIEstablisher) validate(ctx context.Context, objs []runtime.Object, parent v1.PackageRevision, control bool) ([]currentDesired, error) { // nolint:gocyclo
+func (e *APIEstablisher) addLabels(objs []runtime.Object, parent v1.PackageRevision) error {
+	commonLabels := parent.GetCommonLabels()
+	for _, obj := range objs {
+		// convert to resource.Object to be able to access metadata
+		d, ok := obj.(resource.Object)
+		if !ok {
+			return errors.New(errConfResourceObject)
+		}
+		labels := d.GetLabels()
+		if labels != nil {
+			for key, value := range commonLabels {
+				labels[key] = value
+			}
+		} else {
+			d.SetLabels(commonLabels)
+		}
+	}
+	return nil
+}
+
+func (e *APIEstablisher) validate(ctx context.Context, objs []runtime.Object, parent v1.PackageRevision, control bool) ([]currentDesired, error) { //nolint:gocyclo // TODO(negz): Refactor this to break up complexity.
 	var webhookTLSCert []byte
 	if parent.GetWebhookTLSSecretName() != nil {
 		s := &corev1.Secret{}
@@ -255,7 +279,7 @@ func (e *APIEstablisher) validate(ctx context.Context, objs []runtime.Object, pa
 	return allObjs, nil
 }
 
-func (e *APIEstablisher) establish(ctx context.Context, allObjs []currentDesired, parent client.Object, control bool) ([]xpv1.TypedReference, error) { // nolint:gocyclo
+func (e *APIEstablisher) establish(ctx context.Context, allObjs []currentDesired, parent client.Object, control bool) ([]xpv1.TypedReference, error) { //nolint:gocyclo // Only slightly over (12).
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(maxConcurrentEstablishers)
 	out := make(chan xpv1.TypedReference, len(allObjs))
@@ -309,7 +333,7 @@ func (e *APIEstablisher) create(ctx context.Context, obj resource.Object, parent
 	// get deleted when the new revision doesn't include it in order not to lose
 	// user data, such as custom resources of an old CRD.
 	if pkgRef, ok := GetPackageOwnerReference(parent); ok {
-		pkgRef.Controller = pointer.BoolPtr(false)
+		pkgRef.Controller = pointer.Bool(false)
 		refs = append(refs, pkgRef)
 	}
 	// Overwrite any owner references on the desired object.
@@ -322,7 +346,7 @@ func (e *APIEstablisher) update(ctx context.Context, current, desired resource.O
 	// get deleted when the new revision doesn't include it in order not to lose
 	// user data, such as custom resources of an old CRD.
 	if pkgRef, ok := GetPackageOwnerReference(parent); ok {
-		pkgRef.Controller = pointer.BoolPtr(false)
+		pkgRef.Controller = pointer.Bool(false)
 		meta.AddOwnerReference(current, pkgRef)
 	}
 

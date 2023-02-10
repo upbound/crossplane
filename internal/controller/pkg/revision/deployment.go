@@ -54,7 +54,8 @@ const (
 	upboundCTXValue = "uxp"
 )
 
-func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRevision, cc *v1alpha1.ControllerConfig, namespace string, pullSecrets []corev1.LocalObjectReference) (*corev1.ServiceAccount, *appsv1.Deployment, *corev1.Service) { // nolint:gocyclo
+//nolint:gocyclo // TODO(negz): Can this be refactored for less complexity (and fewer arguments?)
+func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRevision, cc *v1alpha1.ControllerConfig, namespace string, pullSecrets []corev1.LocalObjectReference) (*corev1.ServiceAccount, *appsv1.Deployment, *corev1.Service) {
 	s := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            revision.GetName(),
@@ -183,6 +184,9 @@ func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRe
 		s.Annotations = cc.Annotations
 		d.Labels = cc.Labels
 		d.Annotations = cc.Annotations
+		if cc.Spec.ServiceAccountName != nil {
+			s.Name = *cc.Spec.ServiceAccountName
+		}
 		if cc.Spec.Metadata != nil {
 			d.Spec.Template.Annotations = cc.Spec.Metadata.Annotations
 		}
