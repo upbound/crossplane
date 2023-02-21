@@ -82,6 +82,11 @@ type startCommand struct {
 	EnableEnvironmentConfigs   bool `group:"Alpha Features:" help:"Enable support for EnvironmentConfigs."`
 	EnableExternalSecretStores bool `group:"Alpha Features:" help:"Enable support for External Secret Stores."`
 	EnableCompositionFunctions bool `group:"Alpha Features:" help:"Enable support for Composition Functions."`
+	// NOTE(hasheddan): this feature is unlikely to graduate from alpha status
+	// and should be removed when a runtime interface is introduced upstream.
+	// See https://github.com/crossplane/crossplane/issues/2671 for more
+	// information.
+	EnableProviderIdentity bool `group:"Alpha Features:" help:"Enable support for Provider identity."`
 }
 
 // Run core Crossplane controllers.
@@ -128,6 +133,10 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 	if c.EnableCompositionFunctions {
 		feats.Enable(features.EnableAlphaCompositionFunctions)
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaCompositionFunctions)
+	}
+	if c.EnableProviderIdentity {
+		feats.Enable(features.EnableProviderIdentity)
+		log.Info("Alpha feature enabled", "flag", features.EnableProviderIdentity)
 	}
 
 	o := controller.Options{
