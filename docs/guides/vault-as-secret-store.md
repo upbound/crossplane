@@ -1,11 +1,7 @@
 ---
 title: Vault as an External Secret Store 
-toc: true
 weight: 230
-indent: true
 ---
-
-# Using Vault as an External Secret Store
 
 This guide walks through the steps required to configure Crossplane and
 its Providers to use [Vault] as an [External Secret Store]. For the sake of
@@ -30,7 +26,7 @@ which expect input parameters that could be sensitive. Initial password of a
 managed database is a good example of this category.
 
 It is already possible to use Vault for the 1st category (i.e. Provider
-Credentials) as described in [the previous guide]. 3rd use case is a relatively
+Credentials) as described in [the previous guide]. The 3rd use case is relatively
 rare and being tracked with [this issue].
 
 In this guide we will focus on the 2nd category, which is storing Connection
@@ -206,7 +202,7 @@ kind: Provider
 metadata:
   name: provider-gcp
 spec:
-  package: crossplane/provider-gcp:v0.21.0
+  package: xpkg.upbound.io/crossplane-contrib/provider-gcp:v0.22.0
   controllerConfigRef:
     name: vault-config" | kubectl apply -f -
 ```
@@ -474,7 +470,7 @@ kubectl -n default delete claim my-ess
 
 [Vault]: https://www.vaultproject.io/
 [External Secret Store]: https://github.com/crossplane/crossplane/blob/master/design/design-doc-external-secret-stores.md
-[the previous guide]: vault-injection.md
+[the previous guide]: {{<ref "vault-injection" >}}
 [this issue]: https://github.com/crossplane/crossplane/issues/2985
 [Kubernetes Auth Method]: https://www.vaultproject.io/docs/auth/kubernetes
 [Unseal]: https://www.vaultproject.io/docs/concepts/seal

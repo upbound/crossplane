@@ -1,10 +1,7 @@
 ---
 title: Concepts
-toc: true
 weight: 100
 ---
-
-# Overview
 
 Crossplane introduces multiple building blocks that enable you to provision,
 compose, and consume infrastructure using the Kubernetes API. These individual
@@ -36,7 +33,7 @@ Managed resources are Kubernetes custom resources that represent infrastructure
 primitives. Managed resources with an API version of `v1beta1` or higher support
 every field that the cloud provider does for the given resource. You can find
 the Managed Resources and their API specifications for each provider on
-[doc.crds.dev] and learn more in the [managed resources documentation].
+the [Upbound Marketplace] and learn more in the [managed resources documentation].
 
 ## Composite Resources
 
@@ -49,10 +46,10 @@ learn more about all of these concepts in the [composition documentation].
 
 <!-- Named Links -->
 
-[Packages]: packages.md
+[Packages]: {{<ref "packages" >}}
 [CRDs]: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/
 [controllers]: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#custom-controllers
-[providers documentation]: providers.md
-[doc.crds.dev]: https://doc.crds.dev
-[managed resources documentation]: managed-resources.md
-[composition documentation]: composition.md
+[providers documentation]: {{<ref "providers" >}}
+[Upbound Marketplace]: https://marketplace.upbound.io
+[managed resources documentation]: {{<ref "managed-resources" >}}
+[composition documentation]: {{<ref "composition" >}}
