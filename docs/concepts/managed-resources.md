@@ -1,13 +1,7 @@
 ---
 title: Managed Resources
-toc: true
 weight: 102
-indent: true
 ---
-
-# Managed Resources
-
-## Overview
 
 A Managed Resource (MR) is Crossplane's representation of a resource in an
 external system - most commonly a cloud provider. Managed Resources are
@@ -31,14 +25,8 @@ Composite Resources or XRs - not used directly. See the
 Crossplane API conventions extend the Kubernetes API conventions for the schema
 of Crossplane managed resources. Following is an example of a managed resource:
 
-<ul class="nav nav-tabs">
-<li class="active"><a href="#aws-tab-1" data-toggle="tab">AWS</a></li>
-<li><a href="#gcp-tab-1" data-toggle="tab">GCP</a></li>
-<li><a href="#azure-tab-1" data-toggle="tab">Azure</a></li>
-</ul>
-<br>
-<div class="tab-content">
-<div class="tab-pane fade in active" id="aws-tab-1" markdown="1">
+{{< tabs >}}
+{{< tab "AWS" >}}
 
 The AWS provider supports provisioning an [RDS][rds] instance via the `RDSInstance`
 managed resource it adds to Crossplane.
@@ -87,8 +75,8 @@ You can then delete the `RDSInstance`:
 kubectl delete rdsinstance rdspostgresql
 ```
 
-</div>
-<div class="tab-pane fade" id="gcp-tab-1" markdown="1">
+{{< /tab >}}
+{{< tab "GCP" >}}
 
 The GCP provider supports provisioning a [CloudSQL][cloudsql] instance with the
 `CloudSQLInstance` managed resource it adds to Crossplane.
@@ -136,8 +124,8 @@ You can then delete the `CloudSQLInstance`:
 kubectl delete cloudsqlinstance cloudsqlpostgresql
 ```
 
-</div>
-<div class="tab-pane fade" id="azure-tab-1" markdown="1">
+{{< /tab >}}
+{{< tab "Azure" >}}
 
 The Azure provider supports provisioning an [Azure Database for PostgreSQL]
 instance with the `PostgreSQLServer` managed resource it adds to Crossplane.
@@ -205,8 +193,8 @@ kubectl delete postgresqlserver sqlserverpostgresql
 kubectl delete resourcegroup sqlserverpostgresql-rg
 ```
 
-</div>
-</div>
+{{< /tab >}}
+{{< /tabs >}}
 
 In Kubernetes, `spec` top field represents the desired state of the user.
 Crossplane adheres to that and has its own conventions about how the fields
@@ -457,14 +445,14 @@ fields are there and those are enough to import a resource. The tool you're
 using needs to store `annotations` and `spec` fields, which most tools do
 including Velero.
 
-[term-xrm]: terminology.md#crossplane-resource-model
+[term-xrm]: {{<ref "terminology" >}}#crossplane-resource-model
 [rds]: https://aws.amazon.com/rds/
 [cloudsql]: https://cloud.google.com/sql
-[composition]: composition.md
-[api-versioning]: https://kubernetes.io/docs/reference/using-api/api-overview/#api-versioning
+[composition]: {{<ref "composition" >}}
+[api-versioning]: https://kubernetes.io/docs/reference/using-api/#api-versioning#api-versioning
 [velero]: https://velero.io/
-[api-reference]: ../api-docs/overview.md
-[provider]: providers.md
+[api-reference]: {{<ref "../api-docs" >}}
+[provider]: {{<ref "providers" >}}
 [issue-727]: https://github.com/crossplane/crossplane/issues/727
 [issue-1143]: https://github.com/crossplane/crossplane/issues/1143
 [managed-api-patterns]: https://github.com/crossplane/crossplane/blob/master/design/one-pager-managed-resource-api-design.md
