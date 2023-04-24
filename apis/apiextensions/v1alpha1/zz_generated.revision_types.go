@@ -136,7 +136,7 @@ type EnvironmentSourceSelectorLabelMatcher struct {
 // EnvironmentPatch is a patch for a Composition environment.
 type EnvironmentPatch struct {
 	// Type sets the patching behaviour to be used. Each patch type may require
-	// its' own fields to be set on the Patch object.
+	// its own fields to be set on the Patch object.
 	// +optional
 	// +kubebuilder:validation:Enum=FromCompositeFieldPath;ToCompositeFieldPath;CombineFromComposite;CombineToComposite
 	// +kubebuilder:default=FromCompositeFieldPath
@@ -358,7 +358,7 @@ const (
 // the composed resource, applying any defined transformers.
 type Patch struct {
 	// Type sets the patching behaviour to be used. Each patch type may require
-	// its' own fields to be set on the Patch object.
+	// its own fields to be set on the Patch object.
 	// +optional
 	// +immutable
 	// +kubebuilder:validation:Enum=FromCompositeFieldPath;FromEnvironmentFieldPath;PatchSet;ToCompositeFieldPath;ToEnvironmentFieldPath;CombineFromEnvironment;CombineFromComposite;CombineToComposite;CombineToEnvironment
@@ -520,13 +520,34 @@ type Transform struct {
 	Convert *ConvertTransform `json:"convert,omitempty"`
 }
 
+// MathTransformType conducts mathematical operations.
+type MathTransformType string
+
+// Accepted MathTransformType.
+const (
+	MathTransformTypeMultiply MathTransformType = "Multiply" // Default
+	MathTransformTypeClampMin MathTransformType = "ClampMin"
+	MathTransformTypeClampMax MathTransformType = "ClampMax"
+)
+
 // MathTransform conducts mathematical operations on the input with the given
 // configuration in its properties.
 type MathTransform struct {
+	// Type of the math transform to be run.
+	// +optional
+	// +kubebuilder:validation:Enum=Multiply;ClampMin;ClampMax
+	// +kubebuilder:default=Multiply
+	Type MathTransformType `json:"type,omitempty"`
+
 	// Multiply the value.
 	// +optional
-	// +immutable
 	Multiply *int64 `json:"multiply,omitempty"`
+	// ClampMin makes sure that the value is not smaller than the given value.
+	// +optional
+	ClampMin *int64 `json:"clampMin,omitempty"`
+	// ClampMax makes sure that the value is not bigger than the given value.
+	// +optional
+	ClampMax *int64 `json:"clampMax,omitempty"`
 }
 
 // MapTransform returns a value for the input from the given map.
@@ -570,6 +591,15 @@ func (m *MapTransform) Resolve(input any) (any, error) {
 	}
 }
 
+// MatchFallbackTo defines how a match operation will fallback.
+type MatchFallbackTo string
+
+// Valid MatchFallbackTo.
+const (
+	MatchFallbackToTypeValue MatchFallbackTo = "Value"
+	MatchFallbackToTypeInput MatchFallbackTo = "Input"
+)
+
 // MatchTransform is a more complex version of a map transform that matches a
 // list of patterns.
 type MatchTransform struct {
@@ -581,6 +611,11 @@ type MatchTransform struct {
 	// The fallback value that should be returned by the transform if now pattern
 	// matches.
 	FallbackValue extv1.JSON `json:"fallbackValue,omitempty"`
+	// Determines to what value the transform should fallback if no pattern matches.
+	// +optional
+	// +kubebuilder:validation:Enum=Value;Input
+	// +kubebuilder:default=Value
+	FallbackTo MatchFallbackTo `json:"fallbackTo,omitempty"`
 }
 
 // MatchTransformPatternType defines the type of a MatchTransformPattern.
@@ -692,13 +727,16 @@ type StringTransformRegexp struct {
 	Group *int `json:"group,omitempty"`
 }
 
+// A ConvertTransformType defines the type of a conversion transform.
+type ConvertTransformType string
+
 // The list of supported ConvertTransform input and output types.
 const (
-	ConvertTransformTypeString  = "string"
-	ConvertTransformTypeBool    = "bool"
-	ConvertTransformTypeInt     = "int"
-	ConvertTransformTypeInt64   = "int64"
-	ConvertTransformTypeFloat64 = "float64"
+	TransformIOTypeString  ConvertTransformType = "string"
+	TransformIOTypeBool    ConvertTransformType = "bool"
+	TransformIOTypeInt     ConvertTransformType = "int"
+	TransformIOTypeInt64   ConvertTransformType = "int64"
+	TransformIOTypeFloat64 ConvertTransformType = "float64"
 )
 
 // ConvertTransformFormat defines the expected format of an input value of a
@@ -715,7 +753,7 @@ const (
 type ConvertTransform struct {
 	// ToType is the type of the output of this transform.
 	// +kubebuilder:validation:Enum=string;int;int64;bool;float64
-	ToType string `json:"toType"`
+	ToType ConvertTransformType `json:"toType"`
 
 	// The expected input format.
 	//

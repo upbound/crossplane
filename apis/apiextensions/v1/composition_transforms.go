@@ -18,8 +18,14 @@ package v1
 
 import (
 	"encoding/json"
+	"regexp"
 
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+
+	"github.com/crossplane/crossplane-runtime/pkg/errors"
+
+	verrors "github.com/crossplane/crossplane/internal/validation/errors"
 )
 
 // TransformType is type of the transform function to be chosen.
@@ -27,6 +33,8 @@ type TransformType string
 
 // Accepted TransformTypes.
 const (
+	ErrFmtConvertFormatPairNotSupported = "conversion from %s to %s is not supported with format %s"
+
 	TransformTypeMap     TransformType = "map"
 	TransformTypeMatch   TransformType = "match"
 	TransformTypeMath    TransformType = "math"
@@ -65,21 +73,146 @@ type Transform struct {
 	Convert *ConvertTransform `json:"convert,omitempty"`
 }
 
+// Validate this Transform is valid.
+//
+//nolint:gocyclo // This is a long but simple/same-y switch.
+func (t *Transform) Validate() *field.Error {
+	switch t.Type {
+	case TransformTypeMath:
+		if t.Math == nil {
+			return field.Required(field.NewPath("math"), "given transform type math requires configuration")
+		}
+		return verrors.WrapFieldError(t.Math.Validate(), field.NewPath("math"))
+	case TransformTypeMap:
+		if t.Map == nil {
+			return field.Required(field.NewPath("map"), "given transform type map requires configuration")
+		}
+		return verrors.WrapFieldError(t.Map.Validate(), field.NewPath("map"))
+	case TransformTypeMatch:
+		if t.Match == nil {
+			return field.Required(field.NewPath("match"), "given transform type match requires configuration")
+		}
+		return verrors.WrapFieldError(t.Match.Validate(), field.NewPath("match"))
+	case TransformTypeString:
+		if t.String == nil {
+			return field.Required(field.NewPath("string"), "given transform type string requires configuration")
+		}
+		return verrors.WrapFieldError(t.String.Validate(), field.NewPath("string"))
+	case TransformTypeConvert:
+		if t.Convert == nil {
+			return field.Required(field.NewPath("convert"), "given transform type convert requires configuration")
+		}
+		if err := t.Convert.Validate(); err != nil {
+			return verrors.WrapFieldError(err, field.NewPath("convert"))
+		}
+	default:
+		// Should never happen
+		return field.Invalid(field.NewPath("type"), t.Type, "unknown transform type")
+	}
+
+	return nil
+}
+
+// GetFormat returns the format of the transform.
+func (t *ConvertTransform) GetFormat() ConvertTransformFormat {
+	if t.Format != nil {
+		return *t.Format
+	}
+	return ConvertTransformFormatNone
+}
+
+// GetOutputType returns the output type of the transform.
+// It returns an error if the transform type is unknown.
+// It returns nil if the output type is not known.
+func (t *Transform) GetOutputType() (*TransformIOType, error) {
+	var out TransformIOType
+	switch t.Type {
+	case TransformTypeMap, TransformTypeMatch:
+		return nil, nil
+	case TransformTypeMath:
+		out = TransformIOTypeFloat64
+	case TransformTypeString:
+		out = TransformIOTypeString
+	case TransformTypeConvert:
+		out = t.Convert.ToType
+	default:
+		return nil, errors.Errorf("unable to get output type, unknown transform type: %s", t.Type)
+	}
+	return &out, nil
+}
+
+// MathTransformType conducts mathematical operations.
+type MathTransformType string
+
+// Accepted MathTransformType.
+const (
+	MathTransformTypeMultiply MathTransformType = "Multiply" // Default
+	MathTransformTypeClampMin MathTransformType = "ClampMin"
+	MathTransformTypeClampMax MathTransformType = "ClampMax"
+)
+
 // MathTransform conducts mathematical operations on the input with the given
 // configuration in its properties.
 type MathTransform struct {
+	// Type of the math transform to be run.
+	// +optional
+	// +kubebuilder:validation:Enum=Multiply;ClampMin;ClampMax
+	// +kubebuilder:default=Multiply
+	Type MathTransformType `json:"type,omitempty"`
+
 	// Multiply the value.
 	// +optional
 	Multiply *int64 `json:"multiply,omitempty"`
+	// ClampMin makes sure that the value is not smaller than the given value.
+	// +optional
+	ClampMin *int64 `json:"clampMin,omitempty"`
+	// ClampMax makes sure that the value is not bigger than the given value.
+	// +optional
+	ClampMax *int64 `json:"clampMax,omitempty"`
+}
+
+// GetType returns the type of the math transform, returning the default if not specified.
+func (m *MathTransform) GetType() MathTransformType {
+	if m.Type == "" {
+		return MathTransformTypeMultiply
+	}
+	return m.Type
+}
+
+// Validate checks this MathTransform is valid.
+func (m *MathTransform) Validate() *field.Error {
+	switch m.GetType() {
+	case MathTransformTypeMultiply:
+		if m.Multiply == nil {
+			return field.Required(field.NewPath("multiply"), "must specify a value if a multiply math transform is specified")
+		}
+	case MathTransformTypeClampMin:
+		if m.ClampMin == nil {
+			return field.Required(field.NewPath("clampMin"), "must specify a value if a clamp min math transform is specified")
+		}
+	case MathTransformTypeClampMax:
+		if m.ClampMax == nil {
+			return field.Required(field.NewPath("clampMax"), "must specify a value if a clamp max math transform is specified")
+		}
+	default:
+		return field.Invalid(field.NewPath("type"), m.Type, "unknown math transform type")
+	}
+	return nil
 }
 
 // MapTransform returns a value for the input from the given map.
 type MapTransform struct {
-	// TODO(negz): Are Pairs really optional if a MapTransform was specified?
-
 	// Pairs is the map that will be used for transform.
 	// +optional
 	Pairs map[string]extv1.JSON `json:",inline"`
+}
+
+// Validate checks this MapTransform is valid.
+func (m *MapTransform) Validate() *field.Error {
+	if len(m.Pairs) == 0 {
+		return field.Required(field.NewPath("pairs"), "at least one pair must be specified if a map transform is specified")
+	}
+	return nil
 }
 
 // NOTE(negz): The Kubernetes JSON decoder doesn't seem to like inlining a map
@@ -95,9 +228,18 @@ func (m *MapTransform) UnmarshalJSON(b []byte) error {
 }
 
 // MarshalJSON from this MapTransform.
-func (m MapTransform) MarshalJSON() ([]byte, error) {
+func (m *MapTransform) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m.Pairs)
 }
+
+// MatchFallbackTo defines how a match operation will fallback.
+type MatchFallbackTo string
+
+// Valid MatchFallbackTo.
+const (
+	MatchFallbackToTypeValue MatchFallbackTo = "Value"
+	MatchFallbackToTypeInput MatchFallbackTo = "Input"
+)
 
 // MatchTransform is a more complex version of a map transform that matches a
 // list of patterns.
@@ -110,6 +252,24 @@ type MatchTransform struct {
 	// The fallback value that should be returned by the transform if now pattern
 	// matches.
 	FallbackValue extv1.JSON `json:"fallbackValue,omitempty"`
+	// Determines to what value the transform should fallback if no pattern matches.
+	// +optional
+	// +kubebuilder:validation:Enum=Value;Input
+	// +kubebuilder:default=Value
+	FallbackTo MatchFallbackTo `json:"fallbackTo,omitempty"`
+}
+
+// Validate checks this MatchTransform is valid.
+func (m *MatchTransform) Validate() *field.Error {
+	if len(m.Patterns) == 0 {
+		return field.Required(field.NewPath("patterns"), "at least one pattern must be specified if a match transform is specified")
+	}
+	for i, p := range m.Patterns {
+		if err := p.Validate(); err != nil {
+			return verrors.WrapFieldError(err, field.NewPath("patterns").Index(i))
+		}
+	}
+	return nil
 }
 
 // MatchTransformPatternType defines the type of a MatchTransformPattern.
@@ -147,6 +307,26 @@ type MatchTransformPattern struct {
 
 	// The value that is used as result of the transform if the pattern matches.
 	Result extv1.JSON `json:"result"`
+}
+
+// Validate checks this MatchTransformPattern is valid.
+func (m *MatchTransformPattern) Validate() *field.Error {
+	switch m.Type {
+	case MatchTransformPatternTypeLiteral, "":
+		if m.Literal == nil {
+			return field.Required(field.NewPath("literal"), "literal pattern type requires a literal")
+		}
+	case MatchTransformPatternTypeRegexp:
+		if m.Regexp == nil {
+			return field.Required(field.NewPath("regexp"), "regexp pattern type requires a regexp")
+		}
+		if _, err := regexp.Compile(*m.Regexp); err != nil {
+			return field.Invalid(field.NewPath("regexp"), *m.Regexp, "invalid regexp")
+		}
+	default:
+		return field.Invalid(field.NewPath("type"), m.Type, "unknown pattern type")
+	}
+	return nil
 }
 
 // StringTransformType transforms a string.
@@ -209,6 +389,40 @@ type StringTransform struct {
 	Regexp *StringTransformRegexp `json:"regexp,omitempty"`
 }
 
+// Validate checks this StringTransform is valid.
+//
+//nolint:gocyclo // just a switch
+func (s *StringTransform) Validate() *field.Error {
+	switch s.Type {
+	case StringTransformTypeFormat, "":
+		if s.Format == nil {
+			return field.Required(field.NewPath("fmt"), "format transform requires a format")
+		}
+	case StringTransformTypeConvert:
+		if s.Convert == nil {
+			return field.Required(field.NewPath("convert"), "convert transform requires a conversion type")
+		}
+	case StringTransformTypeTrimPrefix, StringTransformTypeTrimSuffix:
+		if s.Trim == nil {
+			return field.Required(field.NewPath("trim"), "trim transform requires a trim value")
+		}
+	case StringTransformTypeRegexp:
+		if s.Regexp == nil {
+			return field.Required(field.NewPath("regexp"), "regexp transform requires a regexp")
+		}
+		if s.Regexp.Match == "" {
+			return field.Required(field.NewPath("regexp", "match"), "regexp transform requires a match")
+		}
+		if _, err := regexp.Compile(s.Regexp.Match); err != nil {
+			return field.Invalid(field.NewPath("regexp", "match"), s.Regexp.Match, "invalid regexp")
+		}
+	default:
+		return field.Invalid(field.NewPath("type"), s.Type, "unknown string transform type")
+	}
+	return nil
+
+}
+
 // A StringTransformRegexp extracts a match from the input using a regular
 // expression.
 type StringTransformRegexp struct {
@@ -221,14 +435,26 @@ type StringTransformRegexp struct {
 	Group *int `json:"group,omitempty"`
 }
 
-// The list of supported ConvertTransform input and output types.
+// TransformIOType defines the type of a ConvertTransform.
+type TransformIOType string
+
+// The list of supported Transform input and output types.
 const (
-	ConvertTransformTypeString  = "string"
-	ConvertTransformTypeBool    = "bool"
-	ConvertTransformTypeInt     = "int"
-	ConvertTransformTypeInt64   = "int64"
-	ConvertTransformTypeFloat64 = "float64"
+	TransformIOTypeString  TransformIOType = "string"
+	TransformIOTypeBool    TransformIOType = "bool"
+	TransformIOTypeInt     TransformIOType = "int"
+	TransformIOTypeInt64   TransformIOType = "int64"
+	TransformIOTypeFloat64 TransformIOType = "float64"
 )
+
+// IsValid checks if the given TransformIOType is valid.
+func (c TransformIOType) IsValid() bool {
+	switch c {
+	case TransformIOTypeString, TransformIOTypeBool, TransformIOTypeInt, TransformIOTypeInt64, TransformIOTypeFloat64:
+		return true
+	}
+	return false
+}
 
 // ConvertTransformFormat defines the expected format of an input value of a
 // conversion transform.
@@ -240,11 +466,20 @@ const (
 	ConvertTransformFormatQuantity ConvertTransformFormat = "quantity"
 )
 
+// IsValid returns true if the format is valid.
+func (c ConvertTransformFormat) IsValid() bool {
+	switch c {
+	case ConvertTransformFormatNone, ConvertTransformFormatQuantity:
+		return true
+	}
+	return false
+}
+
 // A ConvertTransform converts the input into a new object whose type is supplied.
 type ConvertTransform struct {
 	// ToType is the type of the output of this transform.
 	// +kubebuilder:validation:Enum=string;int;int64;bool;float64
-	ToType string `json:"toType"`
+	ToType TransformIOType `json:"toType"`
 
 	// The expected input format.
 	//
@@ -256,4 +491,15 @@ type ConvertTransform struct {
 	// +kubebuilder:validation:Enum=none;quantity
 	// +kubebuilder:validation:Default=none
 	Format *ConvertTransformFormat `json:"format,omitempty"`
+}
+
+// Validate returns an error if the ConvertTransform is invalid.
+func (t ConvertTransform) Validate() *field.Error {
+	if !t.GetFormat().IsValid() {
+		return field.Invalid(field.NewPath("format"), t.Format, "invalid format")
+	}
+	if !t.ToType.IsValid() {
+		return field.Invalid(field.NewPath("toType"), t.ToType, "invalid type")
+	}
+	return nil
 }

@@ -83,7 +83,7 @@ func ApplyToObjects(p v1.Patch, cp, cd runtime.Object, only ...v1.PatchType) err
 		return nil
 	}
 
-	switch p.Type {
+	switch p.GetType() {
 	case v1.PatchTypeFromCompositeFieldPath, v1.PatchTypeFromEnvironmentFieldPath:
 		return ApplyFromFieldPathPatch(p, cp, cd)
 	case v1.PatchTypeToCompositeFieldPath, v1.PatchTypeToEnvironmentFieldPath:
@@ -304,13 +304,11 @@ func CombineString(format string, vars []any) (any, error) {
 	return fmt.Sprintf(format, vars...), nil
 }
 
-// TODO(negz): Perhaps have this take PatchSets and ComposedTemplates as args?
-
-// ComposedTemplates returns a revision's composed resource templates with any
-// patchsets dereferenced.
-func ComposedTemplates(cs v1.CompositionSpec) ([]v1.ComposedTemplate, error) {
+// ComposedTemplates returns the supplied composed resource templates with any
+// supplied patchsets dereferenced.
+func ComposedTemplates(pss []v1.PatchSet, cts []v1.ComposedTemplate) ([]v1.ComposedTemplate, error) {
 	pn := make(map[string][]v1.Patch)
-	for _, s := range cs.PatchSets {
+	for _, s := range pss {
 		for _, p := range s.Patches {
 			if p.Type == v1.PatchTypePatchSet {
 				return nil, errors.New(errPatchSetType)
@@ -319,9 +317,9 @@ func ComposedTemplates(cs v1.CompositionSpec) ([]v1.ComposedTemplate, error) {
 		pn[s.Name] = s.Patches
 	}
 
-	ct := make([]v1.ComposedTemplate, len(cs.Resources))
-	for i, r := range cs.Resources {
-		po := []v1.Patch{}
+	ct := make([]v1.ComposedTemplate, len(cts))
+	for i, r := range cts {
+		var po []v1.Patch
 		for _, p := range r.Patches {
 			if p.Type != v1.PatchTypePatchSet {
 				po = append(po, p)

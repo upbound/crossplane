@@ -434,16 +434,10 @@ func CompositeReconcilerOptions(co controller.Options, d *v1.CompositeResourceDe
 			composite.NewAPIDefaultCompositionSelector(c, *meta.ReferenceTo(d, v1.CompositeResourceDefinitionGroupVersionKind), e),
 			composite.NewAPILabelSelectorResolver(c),
 		)),
+		composite.WithCompositionUpdatePolicySelector(composite.NewAPIDefaultCompositionUpdatePolicySelector(c, *meta.ReferenceTo(d, v1.CompositeResourceDefinitionGroupVersionKind), e)),
 		composite.WithLogger(l.WithValues("controller", composite.ControllerName(d.GetName()))),
 		composite.WithRecorder(e.WithAnnotations("controller", composite.ControllerName(d.GetName()))),
 		composite.WithPollInterval(co.PollInterval),
-	}
-
-	// Build Compositions using a CompositionRevision when the composition
-	// revisions feature flag is enabled.
-	if co.Features.Enabled(features.EnableBetaCompositionRevisions) {
-		a := resource.ClientApplicator{Client: c, Applicator: resource.NewAPIPatchingApplicator(c)}
-		o = append(o, composite.WithCompositionFetcher(composite.NewAPIRevisionFetcher(a)))
 	}
 
 	// We only want to enable Composition environment support if the relevant
@@ -469,14 +463,15 @@ func CompositeReconcilerOptions(co controller.Options, d *v1.CompositeResourceDe
 	if co.Features.Enabled(features.EnableAlphaExternalSecretStores) {
 		pc := []managed.ConnectionPublisher{
 			composite.NewAPIFilteredSecretPublisher(c, d.GetConnectionSecretKeys()),
-			composite.NewSecretStoreConnectionPublisher(connection.NewDetailsManager(c, v1alpha1.StoreConfigGroupVersionKind), d.GetConnectionSecretKeys()),
+			composite.NewSecretStoreConnectionPublisher(connection.NewDetailsManager(c, v1alpha1.StoreConfigGroupVersionKind,
+				connection.WithTLSConfig(co.ESSOptions.TLSConfig)), d.GetConnectionSecretKeys()),
 		}
 
 		// If external secret stores are enabled we need to support fetching
 		// connection details from both secrets and external stores.
 		fetcher = composite.ConnectionDetailsFetcherChain{
 			composite.NewSecretConnectionDetailsFetcher(c),
-			connection.NewDetailsManager(c, v1alpha1.StoreConfigGroupVersionKind),
+			connection.NewDetailsManager(c, v1alpha1.StoreConfigGroupVersionKind, connection.WithTLSConfig(co.ESSOptions.TLSConfig)),
 		}
 
 		cc := composite.NewConfiguratorChain(

@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
+
 	"github.com/crossplane/crossplane/internal/version"
 )
 
@@ -34,7 +35,7 @@ type versionFlag string
 type verboseFlag bool
 
 // Decode overrides the default string decoder to be a no-op.
-func (v versionFlag) Decode(ctx *kong.DecodeContext) error { return nil }
+func (v versionFlag) Decode(_ *kong.DecodeContext) error { return nil }
 
 // IsBool indicates that this string flag should be treated as a boolean value.
 func (v versionFlag) IsBool() bool { return true }
