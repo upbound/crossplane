@@ -49,7 +49,6 @@ HELM3_VERSION = v3.6.3
 
 REGISTRY_ORGS = docker.io/upbound
 IMAGES = crossplane xfn
-OSBASEIMAGE = gcr.io/distroless/static:nonroot
 -include build/makelib/imagelight.mk
 
 # ====================================================================================
