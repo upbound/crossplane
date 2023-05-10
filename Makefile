@@ -29,7 +29,7 @@ NPROCS ?= 1
 GO_TEST_PARALLEL := $(shell echo $$(( $(NPROCS) / 2 )))
 
 GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/crossplane $(GO_PROJECT)/cmd/crank $(GO_PROJECT)/cmd/xfn
-GO_LDFLAGS += -X $(GO_PROJECT)/internal/version.version=$(VERSION)
+GO_LDFLAGS += -X $(GO_PROJECT)/internal/version.version=$(shell echo $(VERSION) | sed 's/[\.,-]up.*//' )
 GO_SUBDIRS += cmd internal apis
 GO111MODULE = on
 GOLANGCILINT_VERSION = 1.52.2
@@ -49,7 +49,6 @@ HELM3_VERSION = v3.6.3
 
 REGISTRY_ORGS = docker.io/upbound
 IMAGES = crossplane xfn
-OSBASEIMAGE = gcr.io/distroless/static:nonroot
 -include build/makelib/imagelight.mk
 
 # ====================================================================================
