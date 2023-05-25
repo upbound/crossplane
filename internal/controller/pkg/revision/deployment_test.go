@@ -149,10 +149,6 @@ func deployment(provider *pkgmetav1.Provider, revision string, img string, modif
 										},
 									},
 								},
-								{
-									Name:  upboundCTXEnv,
-									Value: upboundCTXValue,
-								},
 							},
 						},
 					},
@@ -251,6 +247,28 @@ func TestBuildProviderDeployment(t *testing.T) {
 				},
 			},
 			Image: &ccImg,
+		},
+	}
+
+	ccWithVolumes := &v1alpha1.ControllerConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: revisionWithCC.Name,
+		},
+		Spec: v1alpha1.ControllerConfigSpec{
+			Metadata: &v1alpha1.PodObjectMeta{
+				Labels: map[string]string{
+					"k": "v",
+				},
+			},
+			Image: &ccImg,
+			Volumes: []corev1.Volume{
+				{Name: "vol-a"},
+				{Name: "vol-b"},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "vm-a"},
+				{Name: "vm-b"},
+			},
 		},
 	}
 
@@ -361,6 +379,27 @@ func TestBuildProviderDeployment(t *testing.T) {
 					"pkg.crossplane.io/provider": providerWithImage.GetName(),
 					"k":                          "v",
 				})),
+				svc: service(providerWithImage, revisionWithCC),
+			},
+		},
+		"WithVolumes": {
+			reason: "If a ControllerConfig is referenced and it contains volumes and volumeMounts.",
+			fields: args{
+				provider: providerWithImage,
+				revision: revisionWithCC,
+				cc:       ccWithVolumes,
+			},
+			want: want{
+				sa: serviceaccount(revisionWithCC),
+				d: deployment(providerWithImage, revisionWithCC.GetName(), ccImg, withPodTemplateLabels(map[string]string{
+					"pkg.crossplane.io/revision": revisionWithCC.GetName(),
+					"pkg.crossplane.io/provider": providerWithImage.GetName(),
+					"k":                          "v"}),
+					withAdditionalVolume(corev1.Volume{Name: "vol-a"}),
+					withAdditionalVolume(corev1.Volume{Name: "vol-b"}),
+					withAdditionalVolumeMount(corev1.VolumeMount{Name: "vm-a"}),
+					withAdditionalVolumeMount(corev1.VolumeMount{Name: "vm-b"}),
+				),
 				svc: service(providerWithImage, revisionWithCC),
 			},
 		},

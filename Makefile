@@ -32,14 +32,15 @@ GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/crossplane $(GO_PROJECT)/cmd/crank $(GO_P
 GO_LDFLAGS += -X $(GO_PROJECT)/internal/version.version=$(shell echo $(VERSION) | sed 's/[\.,-]up.*//' )
 GO_SUBDIRS += cmd internal apis
 GO111MODULE = on
-GOLANGCILINT_VERSION = 1.51.2
+GOLANGCILINT_VERSION = 1.52.2
 -include build/makelib/golang.mk
 
 # ====================================================================================
 # Setup Kubernetes tools
 
 USE_HELM3 = true
-HELM3_VERSION = v3.6.3
+HELM3_VERSION = v3.12.0
+KIND_VERSION = v0.19.0
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================

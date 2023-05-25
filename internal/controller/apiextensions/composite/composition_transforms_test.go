@@ -18,12 +18,13 @@ package composite
 
 import (
 	"encoding/json"
-	"reflect"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/pointer"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
@@ -176,11 +177,37 @@ func TestMatchResolve(t *testing.T) {
 				err: errors.Wrapf(errors.Errorf(errFmtMatchInputTypeInvalid, "int"), errFmtMatchPattern, 0),
 			},
 		},
+		"ErrFallbackValueAndToInput": {
+			args: args{
+				t: v1.MatchTransform{
+					Patterns:      []v1.MatchTransformPattern{},
+					FallbackValue: asJSON("foo"),
+					FallbackTo:    "Input",
+				},
+				i: "foo",
+			},
+			want: want{
+				err: errors.New(errMatchFallbackBoth),
+			},
+		},
 		"NoPatternsFallback": {
 			args: args{
 				t: v1.MatchTransform{
 					Patterns:      []v1.MatchTransformPattern{},
 					FallbackValue: asJSON("bar"),
+				},
+				i: "foo",
+			},
+			want: want{
+				o: "bar",
+			},
+		},
+		"NoPatternsFallbackToValueExplicit": {
+			args: args{
+				t: v1.MatchTransform{
+					Patterns:      []v1.MatchTransformPattern{},
+					FallbackValue: asJSON("bar"),
+					FallbackTo:    "Value", // Explicitly set to Value, unnecessary but valid.
 				},
 				i: "foo",
 			},
@@ -197,6 +224,31 @@ func TestMatchResolve(t *testing.T) {
 				i: "foo",
 			},
 			want: want{},
+		},
+		"NoPatternsFallbackToInput": {
+			args: args{
+				t: v1.MatchTransform{
+					Patterns:   []v1.MatchTransformPattern{},
+					FallbackTo: "Input",
+				},
+				i: "foo",
+			},
+			want: want{
+				o: "foo",
+			},
+		},
+		"NoPatternsFallbackNilToInput": {
+			args: args{
+				t: v1.MatchTransform{
+					Patterns:      []v1.MatchTransformPattern{},
+					FallbackValue: asJSON(nil),
+					FallbackTo:    "Input",
+				},
+				i: "foo",
+			},
+			want: want{
+				o: "foo",
+			},
 		},
 		"MatchLiteral": {
 			args: args{
@@ -406,10 +458,13 @@ func TestMatchResolve(t *testing.T) {
 }
 
 func TestMathResolve(t *testing.T) {
-	m := int64(2)
+	two := int64(2)
 
 	type args struct {
+		mathType   v1.MathTransformType
 		multiplier *int64
+		clampMin   *int64
+		clampMax   *int64
 		i          any
 	}
 	type want struct {
@@ -421,49 +476,157 @@ func TestMathResolve(t *testing.T) {
 		args
 		want
 	}{
-		"NoMultiplier": {
+		"InvalidType": {
 			args: args{
-				i: 25,
+				mathType: "bad",
+				i:        25,
 			},
 			want: want{
-				err: errors.New(errMathNoMultiplier),
+				err: &field.Error{
+					Type:  field.ErrorTypeInvalid,
+					Field: "type",
+				},
 			},
 		},
 		"NonNumberInput": {
 			args: args{
-				multiplier: &m,
+				mathType:   v1.MathTransformTypeMultiply,
+				multiplier: &two,
 				i:          "ola",
 			},
 			want: want{
 				err: errors.New(errMathInputNonNumber),
 			},
 		},
-		"Success": {
+		"MultiplyNoConfig": {
 			args: args{
-				multiplier: &m,
+				mathType: v1.MathTransformTypeMultiply,
+				i:        25,
+			},
+			want: want{
+				err: &field.Error{
+					Type:  field.ErrorTypeRequired,
+					Field: "multiply",
+				},
+			},
+		},
+		"MultiplySuccess": {
+			args: args{
+				mathType:   v1.MathTransformTypeMultiply,
+				multiplier: &two,
 				i:          3,
 			},
 			want: want{
-				o: 3 * m,
+				o: 3 * two,
 			},
 		},
-		"SuccessInt64": {
+		"MultiplySuccessInt64": {
 			args: args{
-				multiplier: &m,
+				mathType:   v1.MathTransformTypeMultiply,
+				multiplier: &two,
 				i:          int64(3),
 			},
 			want: want{
-				o: 3 * m,
+				o: 3 * two,
+			},
+		},
+		"ClampMinSuccess": {
+			args: args{
+				mathType: v1.MathTransformTypeClampMin,
+				clampMin: &two,
+				i:        1,
+			},
+			want: want{
+				o: int64(2),
+			},
+		},
+		"ClampMinSuccessNoChange": {
+			args: args{
+				mathType: v1.MathTransformTypeClampMin,
+				clampMin: &two,
+				i:        3,
+			},
+			want: want{
+				o: int64(3),
+			},
+		},
+		"ClampMinSuccessInt64": {
+			args: args{
+				mathType: v1.MathTransformTypeClampMin,
+				clampMin: &two,
+				i:        int64(1),
+			},
+			want: want{
+				o: int64(2),
+			},
+		},
+		"ClampMinNoConfig": {
+			args: args{
+				mathType: v1.MathTransformTypeClampMin,
+				i:        25,
+			},
+			want: want{
+				err: &field.Error{
+					Type:  field.ErrorTypeRequired,
+					Field: "clampMin",
+				},
+			},
+		},
+		"ClampMaxSuccess": {
+			args: args{
+				mathType: v1.MathTransformTypeClampMax,
+				clampMax: &two,
+				i:        3,
+			},
+			want: want{
+				o: int64(2),
+			},
+		},
+		"ClampMaxSuccessNoChange": {
+			args: args{
+				mathType: v1.MathTransformTypeClampMax,
+				clampMax: &two,
+				i:        1,
+			},
+			want: want{
+				o: int64(1),
+			},
+		},
+		"ClampMaxSuccessInt64": {
+			args: args{
+				mathType: v1.MathTransformTypeClampMax,
+				clampMax: &two,
+				i:        int64(3),
+			},
+			want: want{
+				o: int64(2),
+			},
+		},
+		"ClampMaxNoConfig": {
+			args: args{
+				mathType: v1.MathTransformTypeClampMax,
+				i:        25,
+			},
+			want: want{
+				err: &field.Error{
+					Type:  field.ErrorTypeRequired,
+					Field: "clampMax",
+				},
 			},
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			tr := v1.MathTransform{Multiply: tc.multiplier}
+			tr := v1.MathTransform{Type: tc.mathType, Multiply: tc.multiplier, ClampMin: tc.clampMin, ClampMax: tc.clampMax}
 			got, err := ResolveMath(tr, tc.i)
 
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
 				t.Errorf("Resolve(b): -want, +got:\n%s", diff)
+			}
+			fieldErr := &field.Error{}
+			if err != nil && errors.As(err, &fieldErr) {
+				fieldErr.Detail = ""
+				fieldErr.BadValue = nil
 			}
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("Resolve(b): -want, +got:\n%s", diff)
@@ -483,7 +646,7 @@ func TestStringResolve(t *testing.T) {
 		i       any
 	}
 	type want struct {
-		o   any
+		o   string
 		err error
 	}
 	sFmt := "verycool%s"
@@ -817,7 +980,7 @@ func TestStringResolve(t *testing.T) {
 
 func TestConvertResolve(t *testing.T) {
 	type args struct {
-		to     string
+		to     v1.TransformIOType
 		format *v1.ConvertTransformFormat
 		i      any
 	}
@@ -833,7 +996,7 @@ func TestConvertResolve(t *testing.T) {
 		"StringToBool": {
 			args: args{
 				i:  "true",
-				to: v1.ConvertTransformTypeBool,
+				to: v1.TransformIOTypeBool,
 			},
 			want: want{
 				o: true,
@@ -842,7 +1005,7 @@ func TestConvertResolve(t *testing.T) {
 		"StringToFloat64": {
 			args: args{
 				i:  "1000",
-				to: v1.ConvertTransformTypeFloat64,
+				to: v1.TransformIOTypeFloat64,
 			},
 			want: want{
 				o: 1000.0,
@@ -851,7 +1014,7 @@ func TestConvertResolve(t *testing.T) {
 		"StringToQuantityFloat64": {
 			args: args{
 				i:      "1000m",
-				to:     v1.ConvertTransformTypeFloat64,
+				to:     v1.TransformIOTypeFloat64,
 				format: (*v1.ConvertTransformFormat)(pointer.String(string(v1.ConvertTransformFormatQuantity))),
 			},
 			want: want{
@@ -861,7 +1024,7 @@ func TestConvertResolve(t *testing.T) {
 		"StringToQuantityFloat64InvalidFormat": {
 			args: args{
 				i:      "1000 blabla",
-				to:     v1.ConvertTransformTypeFloat64,
+				to:     v1.TransformIOTypeFloat64,
 				format: (*v1.ConvertTransformFormat)(pointer.String(string(v1.ConvertTransformFormatQuantity))),
 			},
 			want: want{
@@ -871,7 +1034,7 @@ func TestConvertResolve(t *testing.T) {
 		"SameTypeNoOp": {
 			args: args{
 				i:  true,
-				to: v1.ConvertTransformTypeBool,
+				to: v1.TransformIOTypeBool,
 			},
 			want: want{
 				o: true,
@@ -880,7 +1043,7 @@ func TestConvertResolve(t *testing.T) {
 		"IntAliasToInt64": {
 			args: args{
 				i:  int64(1),
-				to: v1.ConvertTransformTypeInt,
+				to: v1.TransformIOTypeInt,
 			},
 			want: want{
 				o: int64(1),
@@ -889,20 +1052,20 @@ func TestConvertResolve(t *testing.T) {
 		"InputTypeNotSupported": {
 			args: args{
 				i:  []int{64},
-				to: v1.ConvertTransformTypeString,
+				to: v1.TransformIOTypeString,
 			},
 			want: want{
-				err: errors.Errorf(errFmtConvertInputTypeNotSupported, reflect.TypeOf([]int{}).Kind().String()),
+				err: errors.Errorf(errFmtConvertInputTypeNotSupported, []int{}),
 			},
 		},
 		"ConversionPairFormatNotSupported": {
 			args: args{
 				i:      100,
-				to:     v1.ConvertTransformTypeString,
+				to:     v1.TransformIOTypeString,
 				format: (*v1.ConvertTransformFormat)(pointer.String(string(v1.ConvertTransformFormatQuantity))),
 			},
 			want: want{
-				err: errors.Errorf(errConvertFormatPairNotSupported, "int", "string", string(v1.ConvertTransformFormatQuantity)),
+				err: errors.Errorf(errFmtConvertFormatPairNotSupported, "int", "string", string(v1.ConvertTransformFormatQuantity)),
 			},
 		},
 		"ConversionPairNotSupported": {
@@ -911,7 +1074,21 @@ func TestConvertResolve(t *testing.T) {
 				to: "[]int",
 			},
 			want: want{
-				err: errors.Errorf(errConvertFormatPairNotSupported, "string", "[]int", string(v1.ConvertTransformFormatNone)),
+				err: &field.Error{
+					Type:     field.ErrorTypeInvalid,
+					Field:    "toType",
+					BadValue: v1.TransformIOType("[]int"),
+					Detail:   "invalid type",
+				},
+			},
+		},
+		"ConversionPairSupportedFloat64Int64": {
+			args: args{
+				i:  float64(1.1),
+				to: v1.TransformIOTypeInt64,
+			},
+			want: want{
+				o: int64(1),
 			},
 		},
 	}
@@ -925,6 +1102,107 @@ func TestConvertResolve(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("Resolve(b): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestConvertTransformGetConversionFunc(t *testing.T) {
+	type args struct {
+		ct   *v1.ConvertTransform
+		from v1.TransformIOType
+	}
+	type want struct {
+		err error
+	}
+	cases := map[string]struct {
+		reason string
+		args   args
+		want   want
+	}{
+		"IntToString": {
+			reason: "Int to String should be valid",
+			args: args{
+				ct: &v1.ConvertTransform{
+					ToType: v1.TransformIOTypeString,
+				},
+				from: v1.TransformIOTypeInt,
+			},
+		},
+		"IntToInt": {
+			reason: "Int to Int should be valid",
+			args: args{
+				ct: &v1.ConvertTransform{
+					ToType: v1.TransformIOTypeInt,
+				},
+				from: v1.TransformIOTypeInt,
+			},
+		},
+		"IntToInt64": {
+			reason: "Int to Int64 should be valid",
+			args: args{
+				ct: &v1.ConvertTransform{
+					ToType: v1.TransformIOTypeInt,
+				},
+				from: v1.TransformIOTypeInt64,
+			},
+		},
+		"Int64ToInt": {
+			reason: "Int64 to Int should be valid",
+			args: args{
+				ct: &v1.ConvertTransform{
+					ToType: v1.TransformIOTypeInt64,
+				},
+				from: v1.TransformIOTypeInt,
+			},
+		},
+		"IntToFloat": {
+			reason: "Int to Float should be valid",
+			args: args{
+				ct: &v1.ConvertTransform{
+					ToType: v1.TransformIOTypeInt,
+				},
+				from: v1.TransformIOTypeFloat64,
+			},
+		},
+		"IntToBool": {
+			reason: "Int to Bool should be valid",
+			args: args{
+				ct: &v1.ConvertTransform{
+					ToType: v1.TransformIOTypeInt,
+				},
+				from: v1.TransformIOTypeBool,
+			},
+		},
+		"StringToIntInvalidFormat": {
+			reason: "String to Int with invalid format should be invalid",
+			args: args{
+				ct: &v1.ConvertTransform{
+					ToType: v1.TransformIOTypeInt,
+					Format: &[]v1.ConvertTransformFormat{"wrong"}[0],
+				},
+				from: v1.TransformIOTypeString,
+			},
+			want: want{
+				err: fmt.Errorf("conversion from string to int64 is not supported with format wrong"),
+			},
+		},
+		"IntToIntInvalidFormat": {
+			reason: "Int to Int, invalid format ignored because it is the same type",
+			args: args{
+				ct: &v1.ConvertTransform{
+					ToType: v1.TransformIOTypeInt,
+					Format: &[]v1.ConvertTransformFormat{"wrong"}[0],
+				},
+				from: v1.TransformIOTypeInt,
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := GetConversionFunc(tc.args.ct, tc.args.from)
+			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+				t.Errorf("%s\nGetConversionFunc(...): -want, +got:\n%s", tc.reason, diff)
 			}
 		})
 	}

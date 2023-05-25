@@ -28,6 +28,19 @@ const (
 	// LabelParentPackage is used as key for the owner package label we add to the
 	// revisions. Its corresponding value should be the name of the owner package.
 	LabelParentPackage = "pkg.crossplane.io/package"
+
+	// TODO(negz): Should we propagate the family label up from revision to
+	// provider? It could potentially change over time, for example if the
+	// active revision's label changed for some reason. There's no technical
+	// reason to need it, but being able to list provider.pkg by family seems
+	// convenient.
+
+	// LabelProviderFamily is used as key for the provider family label. This
+	// label is added to any provider that rolls up to a larger 'family', such
+	// as 'family-aws'. It is propagated from provider metadata to provider
+	// revisions, and can be used to select all provider revisions that belong
+	// to a particular family. It is not added to providers, only revisions.
+	LabelProviderFamily = "pkg.crossplane.io/provider-family"
 )
 
 // RevisionActivationPolicy indicates how a package should activate its
@@ -291,7 +304,7 @@ func (p *Configuration) GetControllerConfigRef() *ControllerConfigReference {
 }
 
 // SetControllerConfigRef of this Configuration.
-func (p *Configuration) SetControllerConfigRef(r *ControllerConfigReference) {}
+func (p *Configuration) SetControllerConfigRef(_ *ControllerConfigReference) {}
 
 // GetCurrentRevision of this Configuration.
 func (p *Configuration) GetCurrentRevision() string {
@@ -380,6 +393,9 @@ type PackageRevision interface {
 
 	GetCommonLabels() map[string]string
 	SetCommonLabels(l map[string]string)
+
+	GetESSTLSSecretName() *string
+	SetESSTLSSecretName(s *string)
 }
 
 // GetCondition of this ProviderRevision.
@@ -512,6 +528,16 @@ func (p *ProviderRevision) GetWebhookTLSSecretName() *string {
 // SetWebhookTLSSecretName of this ProviderRevision.
 func (p *ProviderRevision) SetWebhookTLSSecretName(b *string) {
 	p.Spec.WebhookTLSSecretName = b
+}
+
+// GetESSTLSSecretName of this ProviderRevision.
+func (p *ProviderRevision) GetESSTLSSecretName() *string {
+	return p.Spec.ESSTLSSecretName
+}
+
+// SetESSTLSSecretName of this ProviderRevision.
+func (p *ProviderRevision) SetESSTLSSecretName(s *string) {
+	p.Spec.ESSTLSSecretName = s
 }
 
 // GetCommonLabels of this ProviderRevision.
@@ -654,6 +680,16 @@ func (p *ConfigurationRevision) GetWebhookTLSSecretName() *string {
 // SetWebhookTLSSecretName of this ConfigurationRevision.
 func (p *ConfigurationRevision) SetWebhookTLSSecretName(b *string) {
 	p.Spec.WebhookTLSSecretName = b
+}
+
+// GetESSTLSSecretName of this ConfigurationRevision.
+func (p *ConfigurationRevision) GetESSTLSSecretName() *string {
+	return p.Spec.ESSTLSSecretName
+}
+
+// SetESSTLSSecretName of this ConfigurationRevision.
+func (p *ConfigurationRevision) SetESSTLSSecretName(s *string) {
+	p.Spec.ESSTLSSecretName = s
 }
 
 // GetCommonLabels of this ConfigurationRevision.

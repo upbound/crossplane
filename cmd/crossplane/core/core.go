@@ -18,6 +18,9 @@ limitations under the License.
 package core
 
 import (
+	"net/http"
+	"net/http/pprof"
+	"path/filepath"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -27,6 +30,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/crossplane/crossplane-runtime/pkg/certificates"
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/feature"
@@ -35,12 +39,17 @@ import (
 
 	apiextensionsv1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	"github.com/crossplane/crossplane/internal/controller/apiextensions"
+	apiextensionscontroller "github.com/crossplane/crossplane/internal/controller/apiextensions/controller"
 	"github.com/crossplane/crossplane/internal/controller/pkg"
 	pkgcontroller "github.com/crossplane/crossplane/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/internal/features"
+	"github.com/crossplane/crossplane/internal/initializer"
 	"github.com/crossplane/crossplane/internal/transport"
+	"github.com/crossplane/crossplane/internal/validation/apiextensions/v1/composition"
 	"github.com/crossplane/crossplane/internal/xpkg"
 )
+
+const pprofPath = "/debug/pprof/"
 
 // Command runs the core crossplane controllers
 type Command struct {
@@ -63,7 +72,9 @@ func (c *Command) Run() error {
 }
 
 type startCommand struct {
-	Namespace            string `short:"n" help:"Namespace used to unpack and run packages." default:"crossplane-system" env:"POD_NAMESPACE"`
+	Profile string `placeholder:"host:port" help:"Serve runtime profiling data via HTTP at /debug/pprof."`
+
+	Namespace            string `short:"n" help:"Namespace used to unpack, run packages and for xfn private registry credentials extraction." default:"crossplane-system" env:"POD_NAMESPACE"`
 	ServiceAccount       string `help:"Name of the Crossplane Service Account." default:"crossplane" env:"POD_SERVICE_ACCOUNT"`
 	CacheDir             string `short:"c" help:"Directory used for caching package images." default:"/cache" env:"CACHE_DIR"`
 	LeaderElection       bool   `short:"l" help:"Use leader election for the controller manager." default:"false" env:"LEADER_ELECTION"`
@@ -76,12 +87,20 @@ type startCommand struct {
 	SyncInterval     time.Duration `short:"s" help:"How often all resources will be double-checked for drift from the desired state." default:"1h"`
 	PollInterval     time.Duration `help:"How often individual resources will be checked for drift from the desired state." default:"1m"`
 	MaxReconcileRate int           `help:"The global maximum rate per second at which resources may checked for drift from the desired state." default:"10"`
+	ESSTLSSecretName string        `help:"The name of the TLS Secret that will be used by Crossplane and providers as clients of External Secret Store plugins." env:"ESS_TLS_SECRET_NAME"`
+	ESSTLSCertsDir   string        `help:"The path of the folder which will store TLS certificates to be used by Crossplane and providers for communicating with External Secret Store plugins." env:"ESS_TLS_CERTS_DIR"`
 
-	EnableCompositionRevisions bool `group:"Beta Features:" help:"Enable support for CompositionRevisions." default:"true"`
+	EnableEnvironmentConfigs                 bool `group:"Alpha Features:" help:"Enable support for EnvironmentConfigs."`
+	EnableExternalSecretStores               bool `group:"Alpha Features:" help:"Enable support for External Secret Stores."`
+	EnableCompositionFunctions               bool `group:"Alpha Features:" help:"Enable support for Composition Functions."`
+	EnableCompositionWebhookSchemaValidation bool `group:"Alpha Features:" help:"Enable support for Composition validation using schemas."`
 
-	EnableEnvironmentConfigs   bool `group:"Alpha Features:" help:"Enable support for EnvironmentConfigs."`
-	EnableExternalSecretStores bool `group:"Alpha Features:" help:"Enable support for External Secret Stores."`
-	EnableCompositionFunctions bool `group:"Alpha Features:" help:"Enable support for Composition Functions."`
+	// These are GA features that previously had alpha or beta feature flags.
+	// You can't turn off a GA feature. We maintain the flags to avoid breaking
+	// folks who are passing them, but they do nothing. The flags are hidden so
+	// they don't show up in the help output.
+	EnableCompositionRevisions bool `default:"true" hidden:""`
+
 	// NOTE(hasheddan): this feature is unlikely to graduate from alpha status
 	// and should be removed when a runtime interface is introduced upstream.
 	// See https://github.com/crossplane/crossplane/issues/2671 for more
@@ -90,7 +109,34 @@ type startCommand struct {
 }
 
 // Run core Crossplane controllers.
-func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //nolint:gocyclo // Only slightly over (11).
+func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //nolint:gocyclo // Only slightly over.
+	if c.Profile != "" {
+		// NOTE(negz): These log messages attempt to match those emitted by
+		// controller-runtime's metrics HTTP server when it starts.
+		log.Debug("Profiling server is starting to listen", "addr", c.Profile)
+		go func() {
+
+			// Registering these explicitly ensures they're only served by the
+			// HTTP server we start explicitly for profiling.
+			mux := http.NewServeMux()
+			mux.HandleFunc(pprofPath, pprof.Index)
+			mux.HandleFunc(filepath.Join(pprofPath, "cmdline"), pprof.Cmdline)
+			mux.HandleFunc(filepath.Join(pprofPath, "profile"), pprof.Profile)
+			mux.HandleFunc(filepath.Join(pprofPath, "symbol"), pprof.Symbol)
+			mux.HandleFunc(filepath.Join(pprofPath, "trace"), pprof.Trace)
+
+			s := &http.Server{
+				Addr:         c.Profile,
+				ReadTimeout:  2 * time.Minute,
+				WriteTimeout: 2 * time.Minute,
+				Handler:      mux,
+			}
+			log.Debug("Starting server", "type", "pprof", "path", pprofPath, "addr", s.Addr)
+			err := s.ListenAndServe()
+			log.Debug("Profiling server has stopped listening", "error", err)
+		}()
+	}
+
 	cfg, err := ctrl.GetConfig()
 	if err != nil {
 		return errors.Wrap(err, "Cannot get config")
@@ -118,22 +164,22 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 	}
 
 	feats := &feature.Flags{}
-	if c.EnableCompositionRevisions {
-		feats.Enable(features.EnableBetaCompositionRevisions)
-		log.Info("Beta feature enabled", "flag", features.EnableBetaCompositionRevisions)
-	}
 	if c.EnableEnvironmentConfigs {
 		feats.Enable(features.EnableAlphaEnvironmentConfigs)
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaEnvironmentConfigs)
-	}
-	if c.EnableExternalSecretStores {
-		feats.Enable(features.EnableAlphaExternalSecretStores)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaExternalSecretStores)
 	}
 	if c.EnableCompositionFunctions {
 		feats.Enable(features.EnableAlphaCompositionFunctions)
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaCompositionFunctions)
 	}
+	if c.EnableCompositionWebhookSchemaValidation {
+		feats.Enable(features.EnableAlphaCompositionWebhookSchemaValidation)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaCompositionWebhookSchemaValidation)
+	}
+	if !c.EnableCompositionRevisions {
+		log.Info("CompositionRevisions feature is GA and cannot be disabled. The --enable-composition-revisions flag will be removed in a future release.")
+	}
+
 	if c.EnableProviderIdentity {
 		feats.Enable(features.EnableProviderIdentity)
 		log.Info("Alpha feature enabled", "flag", features.EnableProviderIdentity)
@@ -147,7 +193,29 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		Features:                feats,
 	}
 
-	if err := apiextensions.Setup(mgr, o); err != nil {
+	if c.EnableExternalSecretStores {
+		feats.Enable(features.EnableAlphaExternalSecretStores)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaExternalSecretStores)
+
+		tlsConfig, err := certificates.LoadMTLSConfig(filepath.Join(c.ESSTLSCertsDir, initializer.SecretKeyCACert),
+			filepath.Join(c.ESSTLSCertsDir, initializer.SecretKeyTLSCert), filepath.Join(c.ESSTLSCertsDir, initializer.SecretKeyTLSKey), false)
+		if err != nil {
+			return errors.Wrap(err, "Cannot load TLS certificates for ESS")
+		}
+
+		o.ESSOptions = &controller.ESSOptions{
+			TLSConfig:     tlsConfig,
+			TLSSecretName: &c.ESSTLSSecretName,
+		}
+	}
+
+	ao := apiextensionscontroller.Options{
+		Options:        o,
+		Namespace:      c.Namespace,
+		ServiceAccount: c.ServiceAccount,
+	}
+
+	if err := apiextensions.Setup(mgr, ao); err != nil {
 		return errors.Wrap(err, "Cannot setup API extension controllers")
 	}
 
@@ -184,6 +252,9 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		// registrations.
 		if err := (&apiextensionsv1.CompositeResourceDefinition{}).SetupWebhookWithManager(mgr); err != nil {
 			return errors.Wrap(err, "cannot setup webhook for compositeresourcedefinitions")
+		}
+		if err := composition.SetupWebhookWithManager(mgr, o); err != nil {
+			return errors.Wrap(err, "cannot setup webhook for compositions")
 		}
 	}
 

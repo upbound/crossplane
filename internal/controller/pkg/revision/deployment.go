@@ -27,6 +27,7 @@ import (
 	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
 	"github.com/crossplane/crossplane/apis/pkg/v1alpha1"
+	"github.com/crossplane/crossplane/internal/initializer"
 )
 
 var (
@@ -51,12 +52,13 @@ const (
 	webhookPortName         = "webhook"
 	webhookPort             = 9443
 
+	essTLSCertDirEnvVar = "ESS_TLS_CERTS_DIR"
+	essCertsVolumeName  = "ess-client-certs"
+	essCertsDir         = "/ess/tls"
+
 	proidcVolumeName = "proidc"
 	proidcDriverName = "proidc.csi.upbound.io"
 	proidcMountPath  = "/var/run/secrets/upbound.io/provider"
-
-	upboundCTXEnv   = "UPBOUND_CONTEXT"
-	upboundCTXValue = "uxp"
 )
 
 //nolint:gocyclo // TODO(negz): Can this be refactored for less complexity (and fewer arguments?)
@@ -135,10 +137,6 @@ func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRe
 										},
 									},
 								},
-								{
-									Name:  upboundCTXEnv,
-									Value: upboundCTXValue,
-								},
 							},
 						},
 					},
@@ -183,6 +181,39 @@ func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRe
 		d.Spec.Template.Spec.Containers[0].Ports = append(d.Spec.Template.Spec.Containers[0].Ports,
 			port)
 	}
+
+	if revision.GetESSTLSSecretName() != nil {
+		v := corev1.Volume{
+			Name: essCertsVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: *revision.GetESSTLSSecretName(),
+					Items: []corev1.KeyToPath{
+						// These are known and validated keys in TLS secrets.
+						{Key: initializer.SecretKeyTLSCert, Path: initializer.SecretKeyTLSCert},
+						{Key: initializer.SecretKeyTLSKey, Path: initializer.SecretKeyTLSKey},
+						{Key: initializer.SecretKeyCACert, Path: initializer.SecretKeyCACert},
+					},
+				},
+			},
+		}
+		d.Spec.Template.Spec.Volumes = append(d.Spec.Template.Spec.Volumes, v)
+
+		vm := corev1.VolumeMount{
+			Name:      essCertsVolumeName,
+			ReadOnly:  true,
+			MountPath: essCertsDir,
+		}
+		d.Spec.Template.Spec.Containers[0].VolumeMounts =
+			append(d.Spec.Template.Spec.Containers[0].VolumeMounts, vm)
+
+		envs := []corev1.EnvVar{
+			{Name: essTLSCertDirEnvVar, Value: essCertsDir},
+		}
+		d.Spec.Template.Spec.Containers[0].Env =
+			append(d.Spec.Template.Spec.Containers[0].Env, envs...)
+	}
+
 	templateLabels := make(map[string]string)
 	if cc != nil {
 		s.Labels = cc.Labels
@@ -258,6 +289,13 @@ func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRe
 			// want to set (e.g. POD_NAMESPACE), so we just append the new ones
 			// that user provided if there are any.
 			d.Spec.Template.Spec.Containers[0].Env = append(d.Spec.Template.Spec.Containers[0].Env, cc.Spec.Env...)
+		}
+		if len(cc.Spec.Volumes) > 0 {
+			d.Spec.Template.Spec.Volumes = append(d.Spec.Template.Spec.Volumes, cc.Spec.Volumes...)
+		}
+		if len(cc.Spec.VolumeMounts) > 0 {
+			d.Spec.Template.Spec.Containers[0].VolumeMounts =
+				append(d.Spec.Template.Spec.Containers[0].VolumeMounts, cc.Spec.VolumeMounts...)
 		}
 	}
 

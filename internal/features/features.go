@@ -21,11 +21,6 @@ import "github.com/crossplane/crossplane-runtime/pkg/feature"
 
 // Feature flags.
 const (
-	// EnableBetaCompositionRevisions enables beta support for
-	// CompositionRevisions. See the below docs for more details.
-	// https://github.com/crossplane/crossplane/blob/ecd9d5/design/one-pager-composition-revisions.md
-	// https://github.com/crossplane/crossplane/issues/3415
-	EnableBetaCompositionRevisions feature.Flag = "EnableBetaCompositionRevisions"
 	// EnableAlphaEnvironmentConfigs enables alpha support for composition
 	// environments. See the below design for more details.
 	// https://github.com/crossplane/crossplane/blob/c4bcbe/design/one-pager-composition-environment.md
@@ -34,10 +29,18 @@ const (
 	// External Secret Stores. See the below design for more details.
 	// https://github.com/crossplane/crossplane/blob/390ddd/design/design-doc-external-secret-stores.md
 	EnableAlphaExternalSecretStores feature.Flag = "EnableAlphaExternalSecretStores"
+
 	// EnableAlphaCompositionFunctions enables alpha support for composition
 	// functions. See the below design for more details.
 	// https://github.com/crossplane/crossplane/blob/9ee7a2/design/design-doc-composition-functions.md
 	EnableAlphaCompositionFunctions feature.Flag = "EnableAlphaCompositionFunctions"
+
+	// EnableAlphaCompositionWebhookSchemaValidation enables alpha support for
+	// composition webhook schema validation. See the below design for more
+	// details.
+	// https://github.com/crossplane/crossplane/blob/f32496bed53a393c8239376fd8266ddf2ef84d61/design/design-doc-composition-validating-webhook.md
+	EnableAlphaCompositionWebhookSchemaValidation feature.Flag = "EnableAlphaCompositionWebhookSchemaValidation"
+
 	// EnableProviderIdentity enables alpha support for Provider identity. This
 	// feature is only available when running on Upbound.
 	EnableProviderIdentity feature.Flag = "EnableProviderIdentity"

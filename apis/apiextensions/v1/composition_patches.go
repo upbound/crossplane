@@ -17,7 +17,13 @@ limitations under the License.
 package v1
 
 import (
+	"fmt"
+
+	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+
+	verrors "github.com/crossplane/crossplane/internal/validation/errors"
 )
 
 // A PatchType is a type of patch.
@@ -57,13 +63,21 @@ type PatchPolicy struct {
 	MergeOptions  *xpv1.MergeOptions   `json:"mergeOptions,omitempty"`
 }
 
+// GetFromFieldPathPolicy returns the FromFieldPathPolicy for this PatchPolicy, defaulting to FromFieldPathPolicyOptional if not specified.
+func (pp *PatchPolicy) GetFromFieldPathPolicy() FromFieldPathPolicy {
+	if pp == nil || pp.FromFieldPath == nil {
+		return FromFieldPathPolicyOptional
+	}
+	return *pp.FromFieldPath
+}
+
 // Patch objects are applied between composite and composed resources. Their
 // behaviour depends on the Type selected. The default Type,
 // FromCompositeFieldPath, copies a value from the composite resource to
 // the composed resource, applying any defined transformers.
 type Patch struct {
 	// Type sets the patching behaviour to be used. Each patch type may require
-	// its' own fields to be set on the Patch object.
+	// its own fields to be set on the Patch object.
 	// +optional
 	// +kubebuilder:validation:Enum=FromCompositeFieldPath;FromEnvironmentFieldPath;PatchSet;ToCompositeFieldPath;ToEnvironmentFieldPath;CombineFromEnvironment;CombineFromComposite;CombineToComposite;CombineToEnvironment
 	// +kubebuilder:default=FromCompositeFieldPath
@@ -98,6 +112,61 @@ type Patch struct {
 	// Policy configures the specifics of patching behaviour.
 	// +optional
 	Policy *PatchPolicy `json:"policy,omitempty"`
+}
+
+// GetFromFieldPath returns the FromFieldPath for this Patch, or an empty string if it is nil.
+func (p *Patch) GetFromFieldPath() string {
+	if p.FromFieldPath == nil {
+		return ""
+	}
+	return *p.FromFieldPath
+}
+
+// GetToFieldPath returns the ToFieldPath for this Patch, or an empty string if it is nil.
+func (p *Patch) GetToFieldPath() string {
+	if p.ToFieldPath == nil {
+		return ""
+	}
+	return *p.ToFieldPath
+}
+
+// GetType returns the patch type. If the type is not set, it returns the default type.
+func (p *Patch) GetType() PatchType {
+	if p.Type == "" {
+		return PatchTypeFromCompositeFieldPath
+	}
+	return p.Type
+}
+
+// Validate the Patch object.
+func (p *Patch) Validate() *field.Error {
+	switch p.GetType() {
+	case PatchTypeFromCompositeFieldPath, PatchTypeFromEnvironmentFieldPath, PatchTypeToCompositeFieldPath, PatchTypeToEnvironmentFieldPath:
+		if p.FromFieldPath == nil {
+			return field.Required(field.NewPath("fromFieldPath"), fmt.Sprintf("fromFieldPath must be set for patch type %s", p.Type))
+		}
+	case PatchTypePatchSet:
+		if p.PatchSetName == nil {
+			return field.Required(field.NewPath("patchSetName"), fmt.Sprintf("patchSetName must be set for patch type %s", p.Type))
+		}
+	case PatchTypeCombineFromEnvironment, PatchTypeCombineFromComposite, PatchTypeCombineToComposite, PatchTypeCombineToEnvironment:
+		if p.Combine == nil {
+			return field.Required(field.NewPath("combine"), fmt.Sprintf("combine must be set for patch type %s", p.Type))
+		}
+		if p.ToFieldPath == nil {
+			return field.Required(field.NewPath("toFieldPath"), fmt.Sprintf("toFieldPath must be set for patch type %s", p.Type))
+		}
+	default:
+		// Should never happen
+		return field.Invalid(field.NewPath("type"), p.Type, "unknown patch type")
+	}
+	for i, transform := range p.Transforms {
+		if err := transform.Validate(); err != nil {
+			return verrors.WrapFieldError(err, field.NewPath("transforms").Index(i))
+		}
+	}
+
+	return nil
 }
 
 // A CombineVariable defines the source of a value that is combined with

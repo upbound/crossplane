@@ -170,8 +170,8 @@ func NewPTComposer(kube client.Client, o ...PTComposerOption) *PTComposer {
 // Compose resources using the bases, patches, and transforms specified by the
 // supplied Composition.
 func (c *PTComposer) Compose(ctx context.Context, xr resource.Composite, req CompositionRequest) (CompositionResult, error) { //nolint:gocyclo // Breaking this up doesn't seem worth yet more layers of abstraction.
-	// Inline PatchSets from Composition Spec before composing resources.
-	ct, err := ComposedTemplates(req.Composition.Spec)
+	// Inline PatchSets before composing resources.
+	ct, err := ComposedTemplates(req.Revision.Spec.PatchSets, req.Revision.Spec.Resources)
 	if err != nil {
 		return CompositionResult{}, errors.Wrap(err, errInline)
 	}
@@ -183,8 +183,8 @@ func (c *PTComposer) Compose(ctx context.Context, xr resource.Composite, req Com
 
 	// If we have an environment, run all environment patches before composing
 	// resources.
-	if req.Environment != nil && req.Composition.Spec.Environment != nil {
-		for i, p := range req.Composition.Spec.Environment.Patches {
+	if req.Environment != nil && req.Revision.Spec.Environment != nil {
+		for i, p := range req.Revision.Spec.Environment.Patches {
 			if err := ApplyEnvironmentPatch(p, xr, req.Environment); err != nil {
 				return CompositionResult{}, errors.Wrapf(err, errFmtPatchEnvironment, i)
 			}
@@ -291,8 +291,8 @@ func (c *PTComposer) Compose(ctx context.Context, xr resource.Composite, req Com
 	// be rejected by the API server. This will trigger an immediate requeue,
 	// and we'll proceed to update the status as soon as there are no changes to
 	// be made to the spec.
-	copy := xr.DeepCopyObject().(client.Object)
-	if err := c.client.Apply(ctx, copy, mergeOptions(toXRPatchesFromTAs(tas))...); err != nil {
+	objCopy := xr.DeepCopyObject().(client.Object)
+	if err := c.client.Apply(ctx, objCopy, mergeOptions(toXRPatchesFromTAs(tas))...); err != nil {
 		return CompositionResult{}, errors.Wrap(err, errUpdate)
 	}
 

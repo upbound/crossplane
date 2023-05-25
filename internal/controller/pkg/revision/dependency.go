@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
+
 	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
 	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
@@ -39,6 +40,7 @@ const (
 
 	errNotMeta                   = "meta type is not a valid package"
 	errGetOrCreateLock           = "cannot get or create lock"
+	errInitDAG                   = "cannot initialize dependency graph from the packages in the lock"
 	errIncompatibleDependencyFmt = "incompatible dependencies: %+v"
 	errMissingDependenciesFmt    = "missing dependencies: %+v"
 	errDependencyNotInGraph      = "dependency is not present in graph"
@@ -115,7 +117,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, pkg runtime.Obje
 	d := m.newDag()
 	implied, err := d.Init(v1beta1.ToNodes(lock.Packages...))
 	if err != nil {
-		return found, installed, invalid, err
+		return found, installed, invalid, errors.Wrap(err, errInitDAG)
 	}
 
 	lockRef := xpkg.ParsePackageSourceFromReference(prRef)
