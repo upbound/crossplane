@@ -20,23 +20,16 @@ package apiextensions
 import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/crossplane/crossplane-runtime/pkg/controller"
-
 	"github.com/crossplane/crossplane/internal/controller/apiextensions/composition"
+	"github.com/crossplane/crossplane/internal/controller/apiextensions/controller"
 	"github.com/crossplane/crossplane/internal/controller/apiextensions/definition"
 	"github.com/crossplane/crossplane/internal/controller/apiextensions/offered"
-	"github.com/crossplane/crossplane/internal/features"
 )
 
 // Setup API extensions controllers.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
-	// The Composition controller only deals in the management of
-	// CompositionRevisions, so we don't need it at all unless the
-	// CompositionRevision feature flag is enabled.
-	if o.Features.Enabled(features.EnableBetaCompositionRevisions) {
-		if err := composition.Setup(mgr, o); err != nil {
-			return err
-		}
+	if err := composition.Setup(mgr, o); err != nil {
+		return err
 	}
 
 	if err := definition.Setup(mgr, o); err != nil {

@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
@@ -33,8 +35,11 @@ import (
 
 // Error strings
 const (
-	errWriteFIO    = "cannot write FunctionIO YAML to stdout"
-	errRunFunction = "cannot run function"
+	errWriteFIO        = "cannot write FunctionIO YAML to stdout"
+	errRunFunction     = "cannot run function"
+	errParseImage      = "cannot parse image reference"
+	errResolveKeychain = "cannot resolve default registry authentication keychain"
+	errAuthCfg         = "cannot get default registry authentication credentials"
 )
 
 // Command runs a Composition function.
@@ -65,12 +70,39 @@ func (c *Command) Run() error {
 		rootGID = c.MapRootGID
 	}
 
+	ref, err := name.ParseReference(c.Image)
+	if err != nil {
+		return errors.Wrap(err, errParseImage)
+	}
+
+	// We want to resolve authentication credentials here, using the caller's
+	// environment rather than inside the user namespace that spark will create.
+	// DefaultKeychain uses credentials from ~/.docker/config.json to pull
+	// private images. Despite being 'the default' it must be explicitly
+	// provided, or go-containerregistry will use anonymous authentication.
+	auth, err := authn.DefaultKeychain.Resolve(ref.Context())
+	if err != nil {
+		return errors.Wrap(err, errResolveKeychain)
+	}
+
+	a, err := auth.Authorization()
+	if err != nil {
+		return errors.Wrap(err, errAuthCfg)
+	}
+
 	f := xfn.NewContainerRunner(xfn.SetUID(setuid), xfn.MapToRoot(rootUID, rootGID), xfn.WithCacheDir(filepath.Clean(c.CacheDir)))
 	rsp, err := f.RunFunction(context.Background(), &v1alpha1.RunFunctionRequest{
 		Image: c.Image,
 		Input: c.FunctionIO,
 		ImagePullConfig: &v1alpha1.ImagePullConfig{
 			PullPolicy: pullPolicy(c.ImagePullPolicy),
+			Auth: &v1alpha1.ImagePullAuth{
+				Username:      a.Username,
+				Password:      a.Password,
+				Auth:          a.Auth,
+				IdentityToken: a.IdentityToken,
+				RegistryToken: a.RegistryToken,
+			},
 		},
 		RunFunctionConfig: &v1alpha1.RunFunctionConfig{
 			Timeout: durationpb.New(c.Timeout),

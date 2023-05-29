@@ -10,7 +10,7 @@
   "prConcurrentLimit": 5,
 // The branches renovate should target
 // PLEASE UPDATE THIS WHEN RELEASING.
-  "baseBranches": ["master","release-1.9","release-1.10","release-1.11"],
+  "baseBranches": ["master","release-1.10","release-1.11","release-1.12"],
   "ignorePaths": ["design/**"],
   "postUpdateOptions": ["gomodTidy"],
 // By default renovate will auto detect whether semantic commits have been used
@@ -40,6 +40,26 @@
       "datasourceTemplate": "github-tags",
       "depNameTemplate": "golangci/golangci-lint",
       "extractVersionTemplate": "^v(?<version>.*)$"
+    }, {
+// We want a PR to bump the helm version used through env variables in
+// any Github Actions or Makefile, taking it from the official Github
+// repository tags.
+      "fileMatch": ["^Makefile$"],
+      "matchStrings": [
+        "HELM3_VERSION = (?<currentValue>.*?)\\n"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "helm/helm",
+    }, {
+// We want a PR to bump the kind version used through env variables in
+// any Github Actions or Makefile, taking it from the official Github
+// repository tags.
+      "fileMatch": ["^Makefile$"],
+      "matchStrings": [
+        "KIND_VERSION = (?<currentValue>.*?)\\n"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "kubernetes-sigs/kind",
     }
   ],
 // PackageRules disabled below should be enabled in case of vulnerabilities
@@ -152,13 +172,14 @@
       ],
       "groupName": "all non-major go dependencies"
     }, {
-// We want a single PR for all minor and patch bumps of Github Actions
+// We want a single PR for all non-major bumps of Github Actions
       "matchDepTypes": [
         "action"
       ],
       "matchUpdateTypes": [
         "minor",
-        "patch"
+        "patch",
+        "digest"
       ],
       "groupName": "all non-major github action",
       "pinDigests": true
