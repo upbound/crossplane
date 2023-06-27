@@ -13,7 +13,7 @@ on:
 
 env:
   # Common versions
-  GO_VERSION: '1.20.4'
+  GO_VERSION: '1.20.5'
 
   # Common users. We can't run a step 'if secrets.AWS_USR != ""' but we can run
   # a step 'if env.AWS_USR' != ""', so we copy these to succinctly test whether
@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3
         with:
           submodules: true
 
@@ -39,7 +39,7 @@ jobs:
         run: git fetch --prune --unshallow
 
       - name: Login to DockerHub
-        uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a # v2
+        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc # v2
         if: env.DOCKER_USR != ''
         with:
           username: ${{ secrets.DOCKER_USR }}

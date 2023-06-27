@@ -1,5 +1,5 @@
 # This is debian:bookworm-slim (i.e. Debian 12, testing)
-FROM debian:bookworm-slim@sha256:2fd76b2b011a8b171f9ee0540fb74e9be0dc55fafc8f7f2858a482c0e7776ebc
+FROM debian:bookworm-slim@sha256:d8f9d38c21495b04d1cca99805fbb383856e19794265684019bf193c3b7d67f9
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -11,7 +11,7 @@ ARG TARGETARCH
 # time.
 RUN apt-get update && apt-get install -y ca-certificates crun && rm -rf /var/lib/apt/lists/*
 
-ADD bin/${TARGETOS}\_${TARGETARCH}/xfn /usr/local/bin/
+COPY bin/${TARGETOS}\_${TARGETARCH}/xfn /usr/local/bin/
 
 # We run xfn as root in order to grant it CAP_SETUID and CAP_SETGID, which are
 # required in order to create a user namespace with more than one available UID

@@ -21,12 +21,12 @@ jobs:
         permission-level: write
 
     - name: Checkout
-      uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3
       with:
         fetch-depth: 0
 
     - name: Open Backport PR
-      uses: zeebe-io/backport-action@b9f8a0a03e4697a60b4daa3a4b3bb054bf90c9bd # v1.3.0
+      uses: zeebe-io/backport-action@bf5fdd624b35f95d5b85991a728bd5744e8c6cf2 # v1.3.1
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         github_workspace: ${{ github.workspace }}
