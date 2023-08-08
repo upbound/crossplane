@@ -27,8 +27,3 @@ spec:
               type: string
           required:
           - coolField
-        status:
-          type: object
-          properties:
-            coolerField:
-              type: string

@@ -35,6 +35,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 
 	"github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1alpha1"
+	"github.com/crossplane/crossplane/cmd/xfn/start"
 	"github.com/crossplane/crossplane/internal/oci"
 	"github.com/crossplane/crossplane/internal/oci/spec"
 	"github.com/crossplane/crossplane/internal/oci/store"
@@ -74,12 +75,13 @@ type Command struct {
 	CacheDir      string `short:"c" help:"Directory used for caching function images and containers." default:"/xfn"`
 	Runtime       string `help:"OCI runtime binary to invoke." default:"crun"`
 	MaxStdioBytes int64  `help:"Maximum size of stdout and stderr for functions." default:"0"`
+	CABundlePath  string `help:"Additional CA bundle to use when fetching function images from registry." env:"CA_BUNDLE_PATH"`
 }
 
 // Run a Composition Function inside an unprivileged user namespace. Reads a
 // protocol buffer serialized RunFunctionRequest from stdin, and writes a
 // protocol buffer serialized RunFunctionResponse to stdout.
-func (c *Command) Run() error { //nolint:gocyclo // TODO(negz): Refactor some of this out into functions, add tests.
+func (c *Command) Run(args *start.Args) error { //nolint:gocyclo // TODO(negz): Refactor some of this out into functions, add tests.
 	pb, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return errors.Wrap(err, errReadRequest)
@@ -121,17 +123,25 @@ func (c *Command) Run() error { //nolint:gocyclo // TODO(negz): Refactor some of
 		return errors.Wrap(err, errNewDigestStore)
 	}
 
-	r, err := name.ParseReference(req.GetImage())
+	r, err := name.ParseReference(req.GetImage(), name.WithDefaultRegistry(args.Registry))
 	if err != nil {
 		return errors.Wrap(err, errParseRef)
 	}
 
+	opts := []oci.ImageClientOption{FromImagePullConfig(req.GetImagePullConfig())}
+	if c.CABundlePath != "" {
+		rootCA, err := oci.ParseCertificatesFromPath(c.CABundlePath)
+		if err != nil {
+			return errors.Wrap(err, "Cannot parse CA bundle")
+		}
+		opts = append(opts, oci.WithCustomCA(rootCA))
+	}
 	// We cache every image we pull to the filesystem. Layers are cached as
 	// uncompressed tarballs. This allows them to be extracted quickly when
 	// using the uncompressed.Bundler, which extracts a new root filesystem for
 	// every container run.
 	p := oci.NewCachingPuller(h, store.NewImage(c.CacheDir), &oci.RemoteClient{})
-	img, err := p.Image(ctx, r, FromImagePullConfig(req.GetImagePullConfig()))
+	img, err := p.Image(ctx, r, opts...)
 	if err != nil {
 		return errors.Wrap(err, errPull)
 	}

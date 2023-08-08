@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/validate"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/parser"
@@ -39,11 +40,16 @@ const (
 	errGetUncompressed         = "failed to get uncompressed contents from layer"
 	errMultipleAnnotatedLayers = "package is invalid due to multiple annotated base layers"
 	errOpenPackageStream       = "failed to open package stream file"
+	errFmtMaxManifestLayers    = "package has %d layers, but only %d are allowed"
+	errValidateLayer           = "invalid package layer"
+	errValidateImage           = "invalid package image"
 )
 
 const (
 	layerAnnotation     = "io.crossplane.xpkg"
 	baseAnnotationValue = "base"
+	// maxLayers is the maximum number of layers an image can have.
+	maxLayers = 256
 )
 
 // ImageBackend is a backend for parser.
@@ -101,6 +107,12 @@ func (i *ImageBackend) Init(ctx context.Context, bo ...parser.BackendOption) (io
 	if err != nil {
 		return nil, errors.Wrap(err, errGetManifest)
 	}
+
+	// Check that the image has less than the maximum allowed number of layers.
+	if nLayers := len(manifest.Layers); nLayers > maxLayers {
+		return nil, errors.Errorf(errFmtMaxManifestLayers, nLayers, maxLayers)
+	}
+
 	// Determine if the image is using annotated layers.
 	var tarc io.ReadCloser
 	foundAnnotated := false
@@ -121,6 +133,9 @@ func (i *ImageBackend) Init(ctx context.Context, bo ...parser.BackendOption) (io
 		if err != nil {
 			return nil, errors.Wrap(err, errFetchLayer)
 		}
+		if err := validate.Layer(layer); err != nil {
+			return nil, errors.Wrap(err, errValidateLayer)
+		}
 		tarc, err = layer.Uncompressed()
 		if err != nil {
 			return nil, errors.Wrap(err, errGetUncompressed)
@@ -129,6 +144,9 @@ func (i *ImageBackend) Init(ctx context.Context, bo ...parser.BackendOption) (io
 
 	// If we still don't have content then we need to flatten image filesystem.
 	if !foundAnnotated {
+		if err := validate.Image(img); err != nil {
+			return nil, errors.Wrap(err, errValidateImage)
+		}
 		tarc = mutate.Extract(img)
 	}
 
