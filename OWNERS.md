@@ -26,10 +26,10 @@ See [CODEOWNERS](CODEOWNERS) for automatic PR assignment.
 ## Maintainers
 
 * Nic Cope <negz@upbound.io> ([negz](https://github.com/negz))
-* Daniel Mangum <dan@upbound.io> ([hasheddan](https://github.com/hasheddan))
 * Muvaffak Onus <monus@upbound.io> ([muvaf](https://github.com/muvaf))
 * Hasan Turken <hasan@upbound.io> ([turkenh](https://github.com/turkenh))
 * Bob Haddleton <bob.haddleton@nokia.com> ([bobh66](https://github.com/bobh66))
+* Philippe Scorsolini <philippe.scorsolini@upbound.io> ([phisco](https://github.com/phisco))
 
 ## Reviewers
 
@@ -37,12 +37,13 @@ See [CODEOWNERS](CODEOWNERS) for automatic PR assignment.
 * Daren Iott <daren@upbound.io> ([nullable-eth](https://github.com/nullable-eth))
 * Ezgi Demirel <ezgi@upbound.io> ([ezgidemirel](https://github.com/ezgidemirel))
 * Max Blatt ([MisterMX](https://github.com/MisterMX))
-* Philippe Scorsolini <philippe.scorsolini@upbound.io> ([phisco](https://github.com/phisco))
 * Jared Watts <jared@upbound.io> ([jbw976](https://github.com/jbw976))
 * Lovro Sviben <lovro.sviben@upbound.io> ([lsviben](https://github.com/lsviben))
+* Predrag Knezevic <predrag.knezevic@upbound.io> ([pedjak](https://github.com/pedjak))
 
 ## Emeritus maintainers
 
 * Bassam Tabbara <bassam@upbound.io> ([bassam](https://github.com/bassam))
 * Jared Watts <jared@upbound.io> ([jbw976](https://github.com/jbw976))
 * Illya Chekrygin <illya.chekrygin@gmail.com> ([ichekrygin](https://github.com/ichekrygin))
+* Daniel Mangum <georgedanielmangum@gmail.com> ([hasheddan](https://github.com/hasheddan))
