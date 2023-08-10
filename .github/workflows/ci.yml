@@ -11,7 +11,7 @@ on:
 env:
   # Common versions
   GO_VERSION: '1.20.7'
-  GOLANGCI_VERSION: 'v1.53.3'
+  GOLANGCI_VERSION: 'v1.54.0'
   DOCKER_BUILDX_VERSION: 'v0.10.0'
 
   # Common users. We can't run a step 'if secrets.DOCKER_USR != ""' but we can run
@@ -30,7 +30,7 @@ jobs:
           submodules: true
 
       - name: Setup Go
-        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -84,7 +84,7 @@ jobs:
           submodules: true
 
       - name: Setup Go
-        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -130,7 +130,7 @@ jobs:
           submodules: true
 
       - name: Setup Go
-        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -156,12 +156,12 @@ jobs:
         run: make vendor vendor.check
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@0ba4244466797eb048eb91a6cd43d5c03ca8bd05 # v2
+        uses: github/codeql-action/init@5b6282e01c62d02e720b81eb8a51204f527c3624 # v2
         with:
           languages: go
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@0ba4244466797eb048eb91a6cd43d5c03ca8bd05 # v2
+        uses: github/codeql-action/analyze@5b6282e01c62d02e720b81eb8a51204f527c3624 # v2
 
   trivy-scan-fs:
     runs-on: ubuntu-22.04
@@ -198,7 +198,7 @@ jobs:
         run: git fetch --prune --unshallow
 
       - name: Setup Go
-        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -261,7 +261,7 @@ jobs:
         run: git fetch --prune --unshallow
 
       - name: Setup Go
-        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -333,7 +333,7 @@ jobs:
         run: git fetch --prune --unshallow
 
       - name: Setup Go
-        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
