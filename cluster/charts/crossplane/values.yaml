@@ -9,7 +9,7 @@ deploymentStrategy: RollingUpdate
 
 image:
   # -- Repository for the Crossplane pod image.
-  repository: crossplane/crossplane
+  repository: upbound/crossplane
   # -- The Crossplane image tag. Defaults to the value of `appVersion` in Chart.yaml.
   tag: ""
   # -- The image pull policy used for Crossplane and RBAC Manager pods.
@@ -171,7 +171,7 @@ xfn:
   enabled: false
   image:
     # -- Composite function runner container image.
-    repository: crossplane/xfn
+    repository: upbound/xfn
     # -- Composite function runner container image tag. Defaults to the value of `appVersion` in Chart.yaml.
     tag: ""
     # -- Composite function runner container image pull policy.
