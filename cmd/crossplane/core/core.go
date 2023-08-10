@@ -192,6 +192,7 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 	if !c.EnableCompositionRevisions {
 		log.Info("CompositionRevisions feature is GA and cannot be disabled. The --enable-composition-revisions flag will be removed in a future release.")
 	}
+
 	if c.EnableProviderIdentity {
 		feats.Enable(features.EnableProviderIdentity)
 		log.Info("Alpha feature enabled", "flag", features.EnableProviderIdentity)

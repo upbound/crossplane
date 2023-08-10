@@ -378,12 +378,41 @@ jobs:
           username: ${{ secrets.DOCKER_USR }}
           password: ${{ secrets.DOCKER_PSW }}
 
-      - name: Publish Artifacts to Docker Hub
+      - name: Publish Artifacts to DockerHub
         run: make -j2 publish BRANCH_NAME=${GITHUB_REF##*/}
 
-      - name: Promote Artifacts in Docker Hub
+      - name: Promote Artifacts in DockerHub
         if: github.ref == 'refs/heads/master' && env.DOCKER_USR != ''
         run: make -j2 promote
         env:
           BRANCH_NAME: master
           CHANNEL: master
+
+  fuzz-test:
+    runs-on: ubuntu-22.04
+    needs: detect-noop
+    if: needs.detect-noop.outputs.noop != 'true'
+
+    steps:
+      # TODO(negz): Can we make this use our Go build and dependency cache? It
+      # seems to build Crossplane inside of a Docker image.
+      - name: Build Fuzzers
+        id: build
+        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
+        with:
+          oss-fuzz-project-name: "crossplane"
+          language: go
+
+      - name: Run Fuzzers
+        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
+        with:
+          oss-fuzz-project-name: "crossplane"
+          fuzz-seconds: 300
+          language: go
+
+      - name: Upload Crash
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3
+        if: failure() && steps.build.outcome == 'success'
+        with:
+          name: artifacts
+          path: ./out/artifacts
