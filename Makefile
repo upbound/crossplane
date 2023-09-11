@@ -28,19 +28,19 @@ NPROCS ?= 1
 # to half the number of CPU cores.
 GO_TEST_PARALLEL := $(shell echo $$(( $(NPROCS) / 2 )))
 
-GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/crossplane $(GO_PROJECT)/cmd/crank $(GO_PROJECT)/cmd/xfn
+GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/crossplane $(GO_PROJECT)/cmd/crank
 GO_TEST_PACKAGES = $(GO_PROJECT)/test/e2e
 GO_LDFLAGS += -X $(GO_PROJECT)/internal/version.version=$(shell echo $(VERSION) | sed 's/[\.,-]up.*//' )
 GO_SUBDIRS += cmd internal apis
 GO111MODULE = on
-GOLANGCILINT_VERSION = 1.54.0
+GOLANGCILINT_VERSION = 1.54.1
 -include build/makelib/golang.mk
 
 # ====================================================================================
 # Setup Kubernetes tools
 
 USE_HELM3 = true
-HELM3_VERSION = v3.12.2
+HELM3_VERSION = v3.12.3
 KIND_VERSION = v0.20.0
 -include build/makelib/k8s_tools.mk
 
@@ -49,8 +49,8 @@ KIND_VERSION = v0.20.0
 # Due to the way that the shared build logic works, images should
 # all be in folders at the same level (no additional levels of nesting).
 
-REGISTRY_ORGS = docker.io/upbound
-IMAGES = crossplane xfn
+REGISTRY_ORGS ?= docker.io/upbound
+IMAGES = crossplane
 -include build/makelib/imagelight.mk
 
 # ====================================================================================
@@ -104,20 +104,9 @@ cobertura:
 		grep -v zz_generated.deepcopy | \
 		$(GOCOVER_COBERTURA) > $(GO_TEST_OUTPUT)/cobertura-coverage.xml
 
-# TODO(pedjak):
-# https://github.com/crossplane/crossplane/issues/4294
-e2e.test.images:
-	@$(INFO) Building E2E test images
-	@docker build --load -t $(BUILD_REGISTRY)/fn-labelizer-$(TARGETARCH) test/e2e/testdata/images/labelizer
-	@docker build --load -t $(BUILD_REGISTRY)/fn-tmp-writer-$(TARGETARCH) test/e2e/testdata/images/tmp-writer
-	@$(OK) Built E2E test images
-
-e2e-tag-images: e2e.test.images
+e2e-tag-images:
 	@$(INFO) Tagging E2E test images
 	@docker tag $(BUILD_REGISTRY)/$(PROJECT_NAME)-$(TARGETARCH) crossplane-e2e/$(PROJECT_NAME):latest || $(FAIL)
-	@docker tag $(BUILD_REGISTRY)/xfn-$(TARGETARCH) crossplane-e2e/xfn:latest || $(FAIL)
-	@docker tag $(BUILD_REGISTRY)/fn-labelizer-$(TARGETARCH) crossplane-e2e/fn-labelizer:latest || $(FAIL)
-	@docker tag $(BUILD_REGISTRY)/fn-tmp-writer-$(TARGETARCH) crossplane-e2e/fn-tmp-writer:latest || $(FAIL)
 	@$(OK) Tagged E2E test images
 
 # NOTE(negz): There's already a go.test.integration target, but it's weird.

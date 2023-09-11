@@ -18,6 +18,7 @@ package v1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
@@ -28,6 +29,12 @@ import (
 // An EnvironmentConfiguration specifies the environment for rendering composed
 // resources.
 type EnvironmentConfiguration struct {
+	// DefaultData statically defines the initial state of the environment.
+	// It has the same schema-less structure as the data field in
+	// environment configs.
+	// It is overwritten by the selected environment configs.
+	DefaultData map[string]extv1.JSON `json:"defaultData,omitempty"`
+
 	// EnvironmentConfigs selects a list of `EnvironmentConfig`s. The resolved
 	// resources are stored in the composite resource at
 	// `spec.environmentConfigRefs` and is only updated if it is null.
@@ -239,8 +246,25 @@ type EnvironmentSourceSelectorLabelMatcher struct {
 	// ValueFromFieldPath specifies the field path to look for the label value.
 	ValueFromFieldPath *string `json:"valueFromFieldPath,omitempty"`
 
+	// FromFieldPathPolicy specifies the policy for the valueFromFieldPath.
+	// The default is Required, meaning that an error will be returned if the
+	// field is not found in the composite resource.
+	// Optional means that if the field is not found in the composite resource,
+	// that label pair will just be skipped. N.B. other specified label
+	// matchers will still be used to retrieve the desired
+	// environment config, if any.
+	// +kubebuilder:validation:Enum=Optional;Required
+	// +kubebuilder:default=Required
+	FromFieldPathPolicy *FromFieldPathPolicy `json:"fromFieldPathPolicy,omitempty"`
+
 	// Value specifies a literal label value.
 	Value *string `json:"value,omitempty"`
+}
+
+// FromFieldPathIsOptional returns true if the FromFieldPathPolicy is set to
+// Optional.
+func (e *EnvironmentSourceSelectorLabelMatcher) FromFieldPathIsOptional() bool {
+	return e.FromFieldPathPolicy != nil && *e.FromFieldPathPolicy == FromFieldPathPolicyOptional
 }
 
 // GetType returns the type of the label matcher, returning the default if not set.

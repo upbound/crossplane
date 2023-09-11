@@ -24,6 +24,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/adler32"
 	"regexp"
 	"strconv"
 	"strings"
@@ -72,6 +73,7 @@ const (
 	errDecodeString = "string is not valid base64"
 	errMarshalJSON  = "cannot marshal to JSON"
 	errHash         = "cannot generate hash"
+	errAdler        = "unable to generate Adler checksum"
 )
 
 // Resolve the supplied Transform.
@@ -330,6 +332,9 @@ func stringConvertTransform(t *v1.StringConversionType, input any) (string, erro
 	case v1.StringConversionTypeToSHA512:
 		hash, err := stringGenerateHash(input, sha512.Sum512)
 		return hex.EncodeToString(hash[:]), errors.Wrap(err, errHash)
+	case v1.StringConversionTypeToAdler32:
+		checksum, err := stringGenerateHash(input, adler32.Checksum)
+		return strconv.FormatUint(uint64(checksum), 10), errors.Wrap(err, errAdler)
 	default:
 		return "", errors.Errorf(errStringConvertTypeFailed, *t)
 	}
@@ -482,5 +487,13 @@ var conversions = map[conversionPair]func(any) (any, error){
 	},
 	{from: v1.TransformIOTypeFloat64, to: v1.TransformIOTypeBool, format: v1.ConvertTransformFormatNone}: func(i any) (any, error) { //nolint:unparam // See note above.
 		return i.(float64) == float64(1), nil
+	},
+	{from: v1.TransformIOTypeString, to: v1.TransformIOTypeObject, format: v1.ConvertTransformFormatJSON}: func(i any) (any, error) {
+		o := map[string]any{}
+		return o, json.Unmarshal([]byte(i.(string)), &o)
+	},
+	{from: v1.TransformIOTypeString, to: v1.TransformIOTypeArray, format: v1.ConvertTransformFormatJSON}: func(i any) (any, error) {
+		var o []any
+		return o, json.Unmarshal([]byte(i.(string)), &o)
 	},
 }

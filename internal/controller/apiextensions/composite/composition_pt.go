@@ -37,7 +37,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
-	env "github.com/crossplane/crossplane/internal/controller/apiextensions/composite/environment"
+	"github.com/crossplane/crossplane/internal/controller/apiextensions/usage"
 	"github.com/crossplane/crossplane/internal/xcrd"
 )
 
@@ -239,7 +239,7 @@ func (c *PTComposer) Compose(ctx context.Context, xr resource.Composite, req Com
 		if cd.TemplateRenderErr != nil {
 			continue
 		}
-		o := []resource.ApplyOption{resource.MustBeControllableBy(xr.GetUID())}
+		o := []resource.ApplyOption{resource.MustBeControllableBy(xr.GetUID()), usage.RespectOwnerRefs()}
 		o = append(o, mergeOptions(filterPatches(cd.Template.Patches, patchTypesFromXR()...))...)
 		if err := c.client.Apply(ctx, cd.Resource, o...); err != nil {
 			return CompositionResult{}, errors.Wrap(err, errApply)
@@ -496,7 +496,7 @@ func NewAPIDryRunRenderer(c client.Client) *APIDryRunRenderer {
 // Render the supplied composed resource using the supplied composite resource
 // and template. The rendered resource may be submitted to an API server via a
 // dry run create in order to name and validate it.
-func (r *APIDryRunRenderer) Render(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error { //nolint:gocyclo // Only slightly over (11).
+func (r *APIDryRunRenderer) Render(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *Environment) error { //nolint:gocyclo // Only slightly over (11).
 	kind := cd.GetObjectKind().GroupVersionKind().Kind
 	name := cd.GetName()
 	namespace := cd.GetNamespace()
@@ -572,7 +572,7 @@ func (r *APIDryRunRenderer) Render(ctx context.Context, cp resource.Composite, c
 
 // RenderComposite renders the supplied composite resource using the supplied composed
 // resource and template.
-func RenderComposite(_ context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, _ *env.Environment) error {
+func RenderComposite(_ context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, _ *Environment) error {
 	for i, p := range t.Patches {
 		if err := Apply(p, cp, cd, patchTypesToXR()...); err != nil {
 			return errors.Wrapf(err, errFmtPatch, i)

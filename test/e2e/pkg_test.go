@@ -25,6 +25,7 @@ import (
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 
 	pkgv1 "github.com/crossplane/crossplane/apis/pkg/v1"
+	"github.com/crossplane/crossplane/test/e2e/config"
 	"github.com/crossplane/crossplane/test/e2e/funcs"
 )
 
@@ -38,14 +39,15 @@ func TestConfigurationPullFromPrivateRegistry(t *testing.T) {
 	manifests := "test/e2e/manifests/pkg/configuration/private"
 
 	environment.Test(t,
-		features.New("ConfigurationPullFromPrivateRegistry").
+		features.New(t.Name()).
 			WithLabel(LabelArea, LabelAreaPkg).
 			WithLabel(LabelSize, LabelSizeSmall).
+			WithLabel(config.LabelTestSuite, config.TestSuiteDefault).
 			WithSetup("CreateConfiguration", funcs.AllOf(
 				funcs.ApplyResources(FieldManager, manifests, "*.yaml"),
 				funcs.ResourcesCreatedWithin(1*time.Minute, manifests, "*.yaml"),
 			)).
-			Assess("ConfigurationIsHealthy", funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "configuration.yaml", pkgv1.Healthy(), pkgv1.Active())).
+			Assess("ConfigurationIsHealthy", funcs.ResourcesHaveConditionWithin(2*time.Minute, manifests, "configuration.yaml", pkgv1.Healthy(), pkgv1.Active())).
 			WithTeardown("DeleteConfiguration", funcs.AllOf(
 				funcs.DeleteResources(manifests, "*.yaml"),
 				funcs.ResourcesDeletedWithin(1*time.Minute, manifests, "*.yaml"),
@@ -59,17 +61,18 @@ func TestConfigurationWithDependency(t *testing.T) {
 	manifests := "test/e2e/manifests/pkg/configuration/dependency"
 
 	environment.Test(t,
-		features.New("ConfigurationWithDependency").
+		features.New(t.Name()).
 			WithLabel(LabelArea, LabelAreaPkg).
 			WithLabel(LabelSize, LabelSizeSmall).
+			WithLabel(config.LabelTestSuite, config.TestSuiteDefault).
 			WithSetup("ApplyConfiguration", funcs.AllOf(
 				funcs.ApplyResources(FieldManager, manifests, "configuration.yaml"),
 				funcs.ResourcesCreatedWithin(1*time.Minute, manifests, "configuration.yaml"),
 			)).
 			Assess("ConfigurationIsHealthy",
-				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "configuration.yaml", pkgv1.Healthy(), pkgv1.Active())).
+				funcs.ResourcesHaveConditionWithin(2*time.Minute, manifests, "configuration.yaml", pkgv1.Healthy(), pkgv1.Active())).
 			Assess("RequiredProviderIsHealthy",
-				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "provider-dependency.yaml", pkgv1.Healthy(), pkgv1.Active())).
+				funcs.ResourcesHaveConditionWithin(2*time.Minute, manifests, "provider-dependency.yaml", pkgv1.Healthy(), pkgv1.Active())).
 			// Dependencies are not automatically deleted.
 			WithTeardown("DeleteConfiguration", funcs.AllOf(
 				funcs.DeleteResources(manifests, "configuration.yaml"),
@@ -88,13 +91,14 @@ func TestProviderUpgrade(t *testing.T) {
 	manifests := "test/e2e/manifests/pkg/provider"
 
 	environment.Test(t,
-		features.New("ProviderUpgrade").
+		features.New(t.Name()).
 			WithLabel(LabelArea, LabelAreaPkg).
 			WithLabel(LabelSize, LabelSizeSmall).
+			WithLabel(config.LabelTestSuite, config.TestSuiteDefault).
 			WithSetup("ApplyInitialProvider", funcs.AllOf(
 				funcs.ApplyResources(FieldManager, manifests, "provider-initial.yaml"),
 				funcs.ResourcesCreatedWithin(1*time.Minute, manifests, "provider-initial.yaml"),
-				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "provider-initial.yaml", pkgv1.Healthy(), pkgv1.Active()),
+				funcs.ResourcesHaveConditionWithin(2*time.Minute, manifests, "provider-initial.yaml", pkgv1.Healthy(), pkgv1.Active()),
 			)).
 			WithSetup("InitialManagedResourceIsReady", funcs.AllOf(
 				funcs.ApplyResources(FieldManager, manifests, "mr-initial.yaml"),
@@ -102,7 +106,7 @@ func TestProviderUpgrade(t *testing.T) {
 			)).
 			Assess("UpgradeProvider", funcs.AllOf(
 				funcs.ApplyResources(FieldManager, manifests, "provider-upgrade.yaml"),
-				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "provider-upgrade.yaml", pkgv1.Healthy(), pkgv1.Active()),
+				funcs.ResourcesHaveConditionWithin(2*time.Minute, manifests, "provider-upgrade.yaml", pkgv1.Healthy(), pkgv1.Active()),
 			)).
 			Assess("UpgradeManagedResource", funcs.AllOf(
 				funcs.ApplyResources(FieldManager, manifests, "mr-upgrade.yaml"),

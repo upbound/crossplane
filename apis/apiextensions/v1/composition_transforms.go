@@ -354,6 +354,7 @@ const (
 	StringConversionTypeToSHA1     StringConversionType = "ToSha1"
 	StringConversionTypeToSHA256   StringConversionType = "ToSha256"
 	StringConversionTypeToSHA512   StringConversionType = "ToSha512"
+	StringConversionTypeToAdler32  StringConversionType = "ToAdler32"
 )
 
 // A StringTransform returns a string given the supplied input.
@@ -445,12 +446,15 @@ const (
 	TransformIOTypeInt     TransformIOType = "int"
 	TransformIOTypeInt64   TransformIOType = "int64"
 	TransformIOTypeFloat64 TransformIOType = "float64"
+
+	TransformIOTypeObject TransformIOType = "object"
+	TransformIOTypeArray  TransformIOType = "array"
 )
 
 // IsValid checks if the given TransformIOType is valid.
 func (c TransformIOType) IsValid() bool {
 	switch c {
-	case TransformIOTypeString, TransformIOTypeBool, TransformIOTypeInt, TransformIOTypeInt64, TransformIOTypeFloat64:
+	case TransformIOTypeString, TransformIOTypeBool, TransformIOTypeInt, TransformIOTypeInt64, TransformIOTypeFloat64, TransformIOTypeObject, TransformIOTypeArray:
 		return true
 	}
 	return false
@@ -464,12 +468,13 @@ type ConvertTransformFormat string
 const (
 	ConvertTransformFormatNone     ConvertTransformFormat = "none"
 	ConvertTransformFormatQuantity ConvertTransformFormat = "quantity"
+	ConvertTransformFormatJSON     ConvertTransformFormat = "json"
 )
 
 // IsValid returns true if the format is valid.
 func (c ConvertTransformFormat) IsValid() bool {
 	switch c {
-	case ConvertTransformFormatNone, ConvertTransformFormatQuantity:
+	case ConvertTransformFormatNone, ConvertTransformFormatQuantity, ConvertTransformFormatJSON:
 		return true
 	}
 	return false
@@ -478,17 +483,19 @@ func (c ConvertTransformFormat) IsValid() bool {
 // A ConvertTransform converts the input into a new object whose type is supplied.
 type ConvertTransform struct {
 	// ToType is the type of the output of this transform.
-	// +kubebuilder:validation:Enum=string;int;int64;bool;float64
+	// +kubebuilder:validation:Enum=string;int;int64;bool;float64;object;list
 	ToType TransformIOType `json:"toType"`
 
 	// The expected input format.
 	//
 	// * `quantity` - parses the input as a K8s [`resource.Quantity`](https://pkg.go.dev/k8s.io/apimachinery/pkg/api/resource#Quantity).
 	// Only used during `string -> float64` conversions.
+	// * `json` - parses the input as a JSON string.
+	// Only used during `string -> object` or `string -> list` conversions.
 	//
 	// If this property is null, the default conversion is applied.
 	//
-	// +kubebuilder:validation:Enum=none;quantity
+	// +kubebuilder:validation:Enum=none;quantity;json
 	// +kubebuilder:validation:Default=none
 	Format *ConvertTransformFormat `json:"format,omitempty"`
 }
