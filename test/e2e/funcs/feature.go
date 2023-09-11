@@ -34,6 +34,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -270,7 +271,9 @@ func ResourcesHaveFieldValueWithin(d time.Duration, dir, pattern, path string, w
 			t.Logf("Waiting %s for %s to have value %q at field path %s...", d, identifier(u), want, path)
 		}
 
+		count := atomic.Int32{}
 		match := func(o k8s.Object) bool {
+			count.Add(1)
 			u := asUnstructured(o)
 			got, err := fieldpath.Pave(u.Object).GetValue(path)
 			if err != nil {
@@ -283,6 +286,11 @@ func ResourcesHaveFieldValueWithin(d time.Duration, dir, pattern, path string, w
 		if err := wait.For(conditions.New(c.Client().Resources()).ResourcesMatch(list, match), wait.WithTimeout(d)); err != nil {
 			y, _ := yaml.Marshal(list.Items)
 			t.Errorf("resources did not have desired value %q at field path %s: %v:\n\n%s\n\n", want, path, err, y)
+			return ctx
+		}
+
+		if count.Load() == 0 {
+			t.Errorf("no resources matched pattern %s", filepath.Join(dir, pattern))
 			return ctx
 		}
 
@@ -323,19 +331,37 @@ func ResourceHasFieldValueWithin(d time.Duration, o k8s.Object, path string, wan
 // the supplied glob pattern (e.g. *.yaml). It uses server-side apply - fields
 // are managed by the supplied field manager. It fails the test if any supplied
 // resource cannot be applied successfully.
-func ApplyResources(manager, dir, pattern string) features.Func {
+func ApplyResources(manager, dir, pattern string, options ...decoder.DecodeOption) features.Func {
 	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
 		dfs := os.DirFS(dir)
 
-		if err := decoder.DecodeEachFile(ctx, dfs, pattern, ApplyHandler(c.Client().Resources(), manager)); err != nil {
+		if err := decoder.DecodeEachFile(ctx, dfs, pattern, ApplyHandler(c.Client().Resources(), manager), options...); err != nil {
 			t.Fatal(err)
 			return ctx
 		}
 
 		files, _ := fs.Glob(dfs, pattern)
+		if len(files) == 0 {
+			t.Errorf("No resources found in %s", filepath.Join(dir, pattern))
+			return ctx
+		}
 		t.Logf("Applied resources from %s (matched %d manifests)", filepath.Join(dir, pattern), len(files))
 		return ctx
 	}
+}
+
+// SetAnnotationMutateOption returns a DecodeOption that sets the supplied
+// annotation on the decoded object.
+func SetAnnotationMutateOption(key, value string) decoder.DecodeOption {
+	return decoder.MutateOption(func(o k8s.Object) error {
+		a := o.GetAnnotations()
+		if a == nil {
+			a = map[string]string{}
+		}
+		a[key] = value
+		o.SetAnnotations(a)
+		return nil
+	})
 }
 
 // ResourcesFailToApply applies all manifests under the supplied directory that
@@ -412,7 +438,7 @@ func CopyImageToRegistry(clusterName, ns, sName, image string, timeout time.Dura
 		}
 
 		i := strings.Split(srcRef.String(), "/")
-		err = wait.For(func() (done bool, err error) {
+		err = wait.For(func(_ context.Context) (done bool, err error) {
 			err = crane.Push(src, fmt.Sprintf("%s/%s", reg, i[1]), crane.Insecure)
 			if err != nil {
 				return false, nil //nolint:nilerr // we want to retry and to throw error
@@ -427,10 +453,10 @@ func CopyImageToRegistry(clusterName, ns, sName, image string, timeout time.Dura
 	}
 }
 
-// ManagedResourcesOfClaimHaveFieldValueWithin fails a test if the managed resources
-// created by the claim does not have the supplied value at the supplied path
-// within the supplied duration.
-func ManagedResourcesOfClaimHaveFieldValueWithin(d time.Duration, dir, file, path string, want any, filter func(object k8s.Object) bool) features.Func {
+// ComposedResourcesOfClaimHaveFieldValueWithin fails a test if the composed
+// resources created by the claim does not have the supplied value at the
+// supplied path within the supplied duration.
+func ComposedResourcesOfClaimHaveFieldValueWithin(d time.Duration, dir, file, path string, want any, filter func(object k8s.Object) bool) features.Func {
 	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
 		cm := &claim.Unstructured{}
 		if err := decoder.DecodeFile(os.DirFS(dir), file, cm); err != nil {
@@ -483,16 +509,112 @@ func ManagedResourcesOfClaimHaveFieldValueWithin(d time.Duration, dir, file, pat
 
 		if err := wait.For(conditions.New(c.Client().Resources()).ResourcesMatch(list, match), wait.WithTimeout(d)); err != nil {
 			y, _ := yaml.Marshal(list.Items)
-			t.Errorf("resources did not have desired conditions: %s: %v:\n\n%s\n\n", want, err, y)
+			t.Errorf("resources did not have desired value %q at field path %q before timeout (%s): %s\n\n%s\n\n", want, path, d.String(), err, y)
+
 			return ctx
 		}
 
 		if count.Load() == 0 {
-			t.Errorf("there are no unfiltered referred managed resources to check")
+			t.Errorf("there were no unfiltered referred managed resources to check")
 			return ctx
 		}
 
-		t.Logf("%d resources have desired value %q at field path %s", len(list.Items), want, path)
+		t.Logf("matching resources had desired value %q at field path %s", want, path)
+		return ctx
+	}
+}
+
+// ListedResourcesValidatedWithin fails a test if the supplied list of resources
+// does not have the supplied number of resources that pass the supplied
+// validation function within the supplied duration.
+func ListedResourcesValidatedWithin(d time.Duration, list k8s.ObjectList, min int, validate func(object k8s.Object) bool, listOptions ...resources.ListOption) features.Func {
+	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+		if err := wait.For(conditions.New(c.Client().Resources()).ResourceListMatchN(list, min, validate, listOptions...), wait.WithTimeout(d)); err != nil {
+			y, _ := yaml.Marshal(list)
+			t.Errorf("resources didn't pass validation: %v:\n\n%s\n\n", err, y)
+			return ctx
+		}
+
+		t.Logf("at least %d resource(s) have desired conditions", min)
+		return ctx
+	}
+}
+
+// ListedResourcesDeletedWithin fails a test if the supplied list of resources
+// is not deleted within the supplied duration.
+func ListedResourcesDeletedWithin(d time.Duration, list k8s.ObjectList, listOptions ...resources.ListOption) features.Func {
+	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+		if err := c.Client().Resources().List(ctx, list, listOptions...); err != nil {
+			return ctx
+		}
+		if err := wait.For(conditions.New(c.Client().Resources()).ResourcesDeleted(list), wait.WithTimeout(d)); err != nil {
+			y, _ := yaml.Marshal(list)
+			t.Errorf("resources wasn't deleted: %v:\n\n%s\n\n", err, y)
+			return ctx
+		}
+
+		t.Log("resources deleted")
+		return ctx
+	}
+}
+
+// ListedResourcesModifiedWith modifies the supplied list of resources with the
+// supplied function and fails a test if the supplied number of resources were
+// not modified within the supplied duration.
+func ListedResourcesModifiedWith(list k8s.ObjectList, min int, modify func(object k8s.Object), listOptions ...resources.ListOption) features.Func {
+	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+		if err := c.Client().Resources().List(ctx, list, listOptions...); err != nil {
+			return ctx
+		}
+		var found int
+		metaList, err := meta.ExtractList(list)
+		if err != nil {
+			return ctx
+		}
+		for _, obj := range metaList {
+			if o, ok := obj.(k8s.Object); ok {
+				modify(o)
+				if err = c.Client().Resources().Update(ctx, o); err != nil {
+					t.Errorf("failed to update resource %s/%s: %v", o.GetNamespace(), o.GetName(), err)
+					return ctx
+				}
+				found++
+			} else if !ok {
+				t.Fatalf("unexpected type %T in list, does not satisfy k8s.Object", obj)
+				return ctx
+			}
+		}
+		if found < min {
+			t.Errorf("expected minimum %d resources to be modified, found %d", min, found)
+			return ctx
+		}
+
+		t.Logf("%d resource(s) have been modified", found)
+		return ctx
+	}
+}
+
+// DeletionBlockedByUsageWebhook attempts deleting all resources
+// defined by the manifests under the supplied directory that match the supplied
+// glob pattern (e.g. *.yaml) and verifies that they are blocked by the usage
+// webhook.
+func DeletionBlockedByUsageWebhook(dir, pattern string) features.Func {
+	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+		dfs := os.DirFS(dir)
+
+		err := decoder.DecodeEachFile(ctx, dfs, pattern, decoder.DeleteHandler(c.Client().Resources()))
+		if err == nil {
+			t.Fatal("expected the usage webhook to deny the request but deletion succeeded")
+			return ctx
+		}
+
+		if !strings.HasPrefix(err.Error(), "admission webhook \"nousages.apiextensions.crossplane.io\" denied the request") {
+			t.Fatalf("expected the usage webhook to deny the request but it failed with err: %s", err.Error())
+			return ctx
+		}
+
+		files, _ := fs.Glob(dfs, pattern)
+		t.Logf("Deletion blocked for resources from %s (matched %d manifests)", filepath.Join(dir, pattern), len(files))
 		return ctx
 	}
 }

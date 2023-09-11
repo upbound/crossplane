@@ -106,6 +106,10 @@ type Package interface {
 
 	GetCommonLabels() map[string]string
 	SetCommonLabels(l map[string]string)
+
+	GetTLSServerSecretName() *string
+
+	GetTLSClientSecretName() *string
 }
 
 // GetCondition of this Provider.
@@ -228,6 +232,16 @@ func (p *Provider) SetCommonLabels(l map[string]string) {
 	p.Spec.CommonLabels = l
 }
 
+// GetTLSServerSecretName of this Provider.
+func (p *Provider) GetTLSServerSecretName() *string {
+	return GetSecretNameWithSuffix(p.GetName(), TLSServerSecretNameSuffix)
+}
+
+// GetTLSClientSecretName of this Provider.
+func (p *Provider) GetTLSClientSecretName() *string {
+	return GetSecretNameWithSuffix(p.GetName(), TLSClientSecretNameSuffix)
+}
+
 // GetCondition of this Configuration.
 func (p *Configuration) GetCondition(ct xpv1.ConditionType) xpv1.Condition {
 	return p.Status.GetCondition(ct)
@@ -346,6 +360,16 @@ func (p *Configuration) SetCommonLabels(l map[string]string) {
 	p.Spec.CommonLabels = l
 }
 
+// GetTLSServerSecretName of this Configuration.
+func (p *Configuration) GetTLSServerSecretName() *string {
+	return nil
+}
+
+// GetTLSClientSecretName of this Configuration.
+func (p *Configuration) GetTLSClientSecretName() *string {
+	return nil
+}
+
 var _ PackageRevision = &ProviderRevision{}
 var _ PackageRevision = &ConfigurationRevision{}
 
@@ -388,14 +412,22 @@ type PackageRevision interface {
 	GetDependencyStatus() (found, installed, invalid int64)
 	SetDependencyStatus(found, installed, invalid int64)
 
+	// These methods will be removed once we start to consume certificates generated per entities
 	GetWebhookTLSSecretName() *string
 	SetWebhookTLSSecretName(n *string)
 
 	GetCommonLabels() map[string]string
 	SetCommonLabels(l map[string]string)
 
+	// These methods will be removed once we start to consume certificates generated per entities
 	GetESSTLSSecretName() *string
 	SetESSTLSSecretName(s *string)
+
+	GetTLSServerSecretName() *string
+	SetTLSServerSecretName(n *string)
+
+	GetTLSClientSecretName() *string
+	SetTLSClientSecretName(n *string)
 }
 
 // GetCondition of this ProviderRevision.
@@ -533,6 +565,26 @@ func (p *ProviderRevision) SetWebhookTLSSecretName(b *string) {
 // GetESSTLSSecretName of this ProviderRevision.
 func (p *ProviderRevision) GetESSTLSSecretName() *string {
 	return p.Spec.ESSTLSSecretName
+}
+
+// GetTLSServerSecretName of this ProviderRevision.
+func (p *ProviderRevision) GetTLSServerSecretName() *string {
+	return p.Spec.TLSServerSecretName
+}
+
+// SetTLSServerSecretName of this ProviderRevision.
+func (p *ProviderRevision) SetTLSServerSecretName(s *string) {
+	p.Spec.TLSServerSecretName = s
+}
+
+// GetTLSClientSecretName of this ProviderRevision.
+func (p *ProviderRevision) GetTLSClientSecretName() *string {
+	return p.Spec.TLSClientSecretName
+}
+
+// SetTLSClientSecretName of this ProviderRevision.
+func (p *ProviderRevision) SetTLSClientSecretName(s *string) {
+	p.Spec.TLSClientSecretName = s
 }
 
 // SetESSTLSSecretName of this ProviderRevision.
@@ -692,6 +744,26 @@ func (p *ConfigurationRevision) SetESSTLSSecretName(s *string) {
 	p.Spec.ESSTLSSecretName = s
 }
 
+// GetTLSServerSecretName of this ConfigurationRevision.
+func (p *ConfigurationRevision) GetTLSServerSecretName() *string {
+	return p.Spec.TLSServerSecretName
+}
+
+// SetTLSServerSecretName of this ConfigurationRevision.
+func (p *ConfigurationRevision) SetTLSServerSecretName(s *string) {
+	p.Spec.TLSServerSecretName = s
+}
+
+// GetTLSClientSecretName of this ConfigurationRevision.
+func (p *ConfigurationRevision) GetTLSClientSecretName() *string {
+	return p.Spec.TLSClientSecretName
+}
+
+// SetTLSClientSecretName of this ConfigurationRevision.
+func (p *ConfigurationRevision) SetTLSClientSecretName(s *string) {
+	p.Spec.TLSClientSecretName = s
+}
+
 // GetCommonLabels of this ConfigurationRevision.
 func (p *ConfigurationRevision) GetCommonLabels() map[string]string {
 	return p.Spec.CommonLabels
@@ -737,4 +809,25 @@ func (p *ConfigurationRevisionList) GetRevisions() []PackageRevision {
 		prs[i] = &r
 	}
 	return prs
+}
+
+const (
+	// TLSServerSecretNameSuffix is the suffix added to the name of a secret that
+	// contains TLS server certificates.
+	TLSServerSecretNameSuffix = "-tls-server"
+	// TLSClientSecretNameSuffix is the suffix added to the name of a secret that
+	// contains TLS client certificates.
+	TLSClientSecretNameSuffix = "-tls-client"
+)
+
+// GetSecretNameWithSuffix returns a secret name with the given suffix.
+// K8s secret names can be at most 253 characters long, so we truncate the
+// name if necessary.
+func GetSecretNameWithSuffix(name, suffix string) *string {
+	if len(name) > 253-len(suffix) {
+		name = name[0 : 253-len(suffix)]
+	}
+	s := name + suffix
+
+	return &s
 }

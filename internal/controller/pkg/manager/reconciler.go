@@ -39,6 +39,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
+	"github.com/crossplane/crossplane/apis/pkg/v1alpha1"
 	"github.com/crossplane/crossplane/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/internal/xpkg"
 )
@@ -96,7 +97,7 @@ func WithWebhookTLSSecretName(n string) ReconcilerOption {
 	}
 }
 
-// WithESSTLSSecretName configures the name of the TLS certificate secret that
+// WithESSTLSSecretName configures the name of the ESS TLS certificate secret that
 // Reconciler will add to PackageRevisions it creates.
 func WithESSTLSSecretName(s *string) ReconcilerOption {
 	return func(r *Reconciler) {
@@ -191,6 +192,7 @@ func SetupProvider(mgr ctrl.Manager, o controller.Options) error {
 	if o.ESSOptions != nil && o.ESSOptions.TLSSecretName != nil {
 		opts = append(opts, WithESSTLSSecretName(o.ESSOptions.TLSSecretName))
 	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
 		For(&v1.Provider{}).
@@ -230,6 +232,39 @@ func SetupConfiguration(mgr ctrl.Manager, o controller.Options) error {
 		Owns(&v1.ConfigurationRevision{}).
 		WithOptions(o.ForControllerRuntime()).
 		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
+}
+
+// SetupFunction adds a controller that reconciles Functions.
+func SetupFunction(mgr ctrl.Manager, o controller.Options) error {
+	name := "packages/" + strings.ToLower(v1alpha1.FunctionGroupKind)
+	np := func() v1.Package { return &v1alpha1.Function{} }
+	nr := func() v1.PackageRevision { return &v1alpha1.FunctionRevision{} }
+	nrl := func() v1.PackageRevisionList { return &v1alpha1.FunctionRevisionList{} }
+
+	cs, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return errors.Wrap(err, errCreateK8sClient)
+	}
+	f, err := xpkg.NewK8sFetcher(cs, append(o.FetcherOptions, xpkg.WithNamespace(o.Namespace), xpkg.WithServiceAccount(o.ServiceAccount))...)
+	if err != nil {
+		return errors.Wrap(err, errBuildFetcher)
+	}
+
+	opts := []ReconcilerOption{
+		WithNewPackageFn(np),
+		WithNewPackageRevisionFn(nr),
+		WithNewPackageRevisionListFn(nrl),
+		WithRevisioner(NewPackageRevisioner(f, WithDefaultRegistry(o.DefaultRegistry))),
+		WithLogger(o.Logger.WithValues("controller", name)),
+		WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
+	}
+
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(name).
+		For(&v1alpha1.Function{}).
+		Owns(&v1alpha1.FunctionRevision{}).
+		WithOptions(o.ForControllerRuntime()).
+		Complete(ratelimiter.NewReconciler(name, NewReconciler(mgr, opts...), o.GlobalRateLimiter))
 }
 
 // NewReconciler creates a new package reconciler.
@@ -392,6 +427,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	pr.SetControllerConfigRef(p.GetControllerConfigRef())
 	pr.SetWebhookTLSSecretName(r.webhookTLSSecretName)
 	pr.SetESSTLSSecretName(r.essTLSSecretName)
+	pr.SetTLSServerSecretName(p.GetTLSServerSecretName())
+	pr.SetTLSClientSecretName(p.GetTLSClientSecretName())
 	pr.SetCommonLabels(p.GetCommonLabels())
 
 	// If current revision is not active and we have an automatic or

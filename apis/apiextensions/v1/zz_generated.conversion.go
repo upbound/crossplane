@@ -215,6 +215,11 @@ func (c *GeneratedRevisionSpecConverter) pV1EnvironmentConfigurationToPV1Environ
 	var pV1EnvironmentConfiguration *EnvironmentConfiguration
 	if source != nil {
 		var v1EnvironmentConfiguration EnvironmentConfiguration
+		mapStringV1JSON := make(map[string]v12.JSON, len((*source).DefaultData))
+		for key, value := range (*source).DefaultData {
+			mapStringV1JSON[key] = c.v1JSONToV1JSON(value)
+		}
+		v1EnvironmentConfiguration.DefaultData = mapStringV1JSON
 		var v1EnvironmentSourceList []EnvironmentSource
 		if (*source).EnvironmentConfigs != nil {
 			v1EnvironmentSourceList = make([]EnvironmentSource, len((*source).EnvironmentConfigs))
@@ -564,6 +569,12 @@ func (c *GeneratedRevisionSpecConverter) v1EnvironmentSourceSelectorLabelMatcher
 		pString = &xstring
 	}
 	v1EnvironmentSourceSelectorLabelMatcher.ValueFromFieldPath = pString
+	var pV1FromFieldPathPolicy *FromFieldPathPolicy
+	if source.FromFieldPathPolicy != nil {
+		v1FromFieldPathPolicy := FromFieldPathPolicy(*source.FromFieldPathPolicy)
+		pV1FromFieldPathPolicy = &v1FromFieldPathPolicy
+	}
+	v1EnvironmentSourceSelectorLabelMatcher.FromFieldPathPolicy = pV1FromFieldPathPolicy
 	var pString2 *string
 	if source.Value != nil {
 		xstring2 := *source.Value
