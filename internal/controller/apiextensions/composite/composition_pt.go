@@ -37,8 +37,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
-	"github.com/crossplane/crossplane/internal/controller/apiextensions/usage"
 	env "github.com/crossplane/crossplane/internal/controller/apiextensions/composite/environment"
+	"github.com/crossplane/crossplane/internal/controller/apiextensions/usage"
 	"github.com/crossplane/crossplane/internal/xcrd"
 )
 

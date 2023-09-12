@@ -39,10 +39,10 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
 	xpresource "github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured"
-	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 
 	"github.com/crossplane/crossplane/apis/apiextensions/v1alpha1"
 	apiextensionscontroller "github.com/crossplane/crossplane/internal/controller/apiextensions/controller"
+	"github.com/crossplane/crossplane/internal/controller/apiextensions/usage/composed"
 	"github.com/crossplane/crossplane/internal/usage"
 )
 
