@@ -370,10 +370,9 @@ func deploymentFunction(function *pkgmetav1alpha1.Function, revision string, img
 
 func TestBuildProviderDeployment(t *testing.T) {
 	type args struct {
-		provider         *pkgmetav1.Provider
-		revision         *v1.ProviderRevision
-		cc               *v1alpha1.ControllerConfig
-		providerIdentity bool
+		provider *pkgmetav1.Provider
+		revision *v1.ProviderRevision
+		cc       *v1alpha1.ControllerConfig
 	}
 	type want struct {
 		sa  *corev1.ServiceAccount
@@ -506,37 +505,6 @@ func TestBuildProviderDeployment(t *testing.T) {
 				cs:  secretClient(revisionWithoutCC),
 			},
 		},
-		"NoImgNoCCWithProviderIdentity": {
-			reason: "If provider identity is enabled, a proidc volume should be added.",
-			fields: args{
-				provider:         providerWithoutImage,
-				revision:         revisionWithoutCC,
-				cc:               nil,
-				providerIdentity: true,
-			},
-			want: want{
-				sa: serviceaccount(revisionWithoutCC),
-				d: deploymentProvider(providerWithoutImage, revisionWithCC.GetName(), pkgImg, withAdditionalVolume(corev1.Volume{
-					Name: proidcVolumeName,
-					VolumeSource: corev1.VolumeSource{
-						CSI: &corev1.CSIVolumeSource{
-							Driver:   proidcDriverName,
-							ReadOnly: &readOnly,
-							// TODO(hasheddan): set volume attributes based on package
-							// contents.
-						},
-					},
-				}),
-					withAdditionalVolumeMount(corev1.VolumeMount{
-						Name:      proidcVolumeName,
-						ReadOnly:  readOnly,
-						MountPath: proidcMountPath,
-					})),
-				svc: service(providerWithoutImage, revisionWithoutCC),
-				ss:  secretServer(revisionWithoutCC),
-				cs:  secretClient(revisionWithoutCC),
-			},
-		},
 		"ImgNoCCWithWebhookTLS": {
 			reason: "If the webhook tls secret name is given, then the deployment should be configured to serve behind the given service.",
 			fields: args{
@@ -633,7 +601,7 @@ func TestBuildProviderDeployment(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			sa, d, svc, ss, cs := buildProviderDeployment(tc.fields.provider, tc.fields.revision, tc.fields.cc, namespace, nil, tc.fields.providerIdentity)
+			sa, d, svc, ss, cs := buildProviderDeployment(tc.fields.provider, tc.fields.revision, tc.fields.cc, namespace, nil)
 
 			if diff := cmp.Diff(tc.want.sa, sa, cmpopts.IgnoreTypes([]metav1.OwnerReference{})); diff != "" {
 				t.Errorf("-want, +got:\n%s\n", diff)

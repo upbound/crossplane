@@ -113,11 +113,6 @@ type startCommand struct {
 	// they don't show up in the help output.
 	EnableCompositionRevisions bool `default:"true" hidden:""`
 
-	// NOTE(hasheddan): this feature is unlikely to graduate from alpha status
-	// and should be removed when a runtime interface is introduced upstream.
-	// See https://github.com/crossplane/crossplane/issues/2671 for more
-	// information.
-	EnableProviderIdentity bool `group:"Alpha Features:" help:"Enable support for Provider identity."`
 }
 
 // Run core Crossplane controllers.

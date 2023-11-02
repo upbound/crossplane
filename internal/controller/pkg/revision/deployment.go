@@ -38,7 +38,6 @@ var (
 	allowPrivilegeEscalation = false
 	privileged               = false
 	runAsNonRoot             = true
-	readOnly                 = true
 )
 
 // Providers are expected to use port 8080 if they expose Prometheus metrics,
@@ -68,13 +67,10 @@ const (
 	tlsClientCertsVolumeName = "tls-client-certs"
 	tlsClientCertsDir        = "/tls/client"
 
-	proidcVolumeName = "proidc"
-	proidcDriverName = "proidc.csi.upbound.io"
-	proidcMountPath  = "/var/run/secrets/upbound.io/provider"
 )
 
 // Returns the service account, deployment, service, server and client TLS secrets of the provider.
-func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRevision, cc *v1alpha1.ControllerConfig, namespace string, pullSecrets []corev1.LocalObjectReference, providerIdentity bool) (*corev1.ServiceAccount, *appsv1.Deployment, *corev1.Service, *corev1.Secret, *corev1.Secret) {
+func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRevision, cc *v1alpha1.ControllerConfig, namespace string, pullSecrets []corev1.LocalObjectReference) (*corev1.ServiceAccount, *appsv1.Deployment, *corev1.Service, *corev1.Secret, *corev1.Secret) {
 	s := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            revision.GetName(),
@@ -225,24 +221,6 @@ func buildProviderDeployment(provider *pkgmetav1.Provider, revision v1.PackageRe
 	if cc != nil {
 		setControllerConfigConfigurations(s, cc, d, templateLabels)
 	}
-
-	if providerIdentity {
-		d.Spec.Template.Spec.Volumes = append(d.Spec.Template.Spec.Volumes, corev1.Volume{
-			Name: proidcVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				CSI: &corev1.CSIVolumeSource{
-					Driver:   proidcDriverName,
-					ReadOnly: &readOnly,
-				},
-			},
-		})
-		d.Spec.Template.Spec.Containers[0].VolumeMounts = append(d.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      proidcVolumeName,
-			ReadOnly:  readOnly,
-			MountPath: proidcMountPath,
-		})
-	}
-
 	for k, v := range d.Spec.Selector.MatchLabels { // ensure the template matches the selector
 		templateLabels[k] = v
 	}
