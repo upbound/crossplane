@@ -51,7 +51,7 @@ KIND_VERSION = v0.20.0
 # Due to the way that the shared build logic works, images should
 # all be in folders at the same level (no additional levels of nesting).
 
-REGISTRY_ORGS ?= docker.io/upbound
+REGISTRY_ORGS ?= docker.io/upbound xpkg.upbound.io/upbound
 IMAGES = crossplane
 -include build/makelib/imagelight.mk
 
