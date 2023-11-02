@@ -20,12 +20,12 @@ package definition
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	rbacv1 "k8s.io/api/rbac/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -83,7 +83,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		For(&v1.CompositeResourceDefinition{}).
 		Owns(&rbacv1.ClusterRole{}).
 		WithOptions(o.ForControllerRuntime()).
-		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
+		Complete(ratelimiter.NewReconciler(name, errors.WithSilentRequeueOnConflict(r), o.GlobalRateLimiter))
 }
 
 // ReconcilerOption is used to configure the Reconciler.
@@ -195,7 +195,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			continue
 		}
 		if err != nil {
-			log.Debug(errApplyRole, "error", err)
+			if kerrors.IsConflict(err) {
+				return reconcile.Result{Requeue: true}, nil
+			}
 			err = errors.Wrap(err, errApplyRole)
 			r.record.Event(d, event.Warning(reasonApplyRoles, err))
 			return reconcile.Result{}, err
@@ -207,8 +209,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	if len(applied) > 0 {
-		sort.Strings(applied)
-		r.record.Event(d, event.Normal(reasonApplyRoles, fmt.Sprintf("Applied RBAC ClusterRoles: %s", firstNAndSomeMore(applied))))
+		r.record.Event(d, event.Normal(reasonApplyRoles, fmt.Sprintf("Applied RBAC ClusterRoles: %s", resource.StableNAndSomeMore(resource.DefaultFirstN, applied))))
 	}
 
 	// TODO(negz): Add a condition that indicates the RBAC manager is managing
@@ -225,11 +226,4 @@ func ClusterRolesDiffer(current, desired runtime.Object) bool {
 	c := current.(*rbacv1.ClusterRole)
 	d := desired.(*rbacv1.ClusterRole)
 	return !cmp.Equal(c.GetLabels(), d.GetLabels()) || !cmp.Equal(c.Rules, d.Rules)
-}
-
-func firstNAndSomeMore(names []string) string {
-	if len(names) > 3 {
-		return fmt.Sprintf("%s, and %d more", strings.Join(names[:3], ", "), len(names)-3)
-	}
-	return strings.Join(names, ", ")
 }

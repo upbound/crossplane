@@ -23,6 +23,7 @@ import (
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/utils/ptr"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 )
@@ -49,7 +50,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should accept empty readiness check",
 			args: args{
-				comp:    buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil),
+				comp:    buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil),
 				gkToCRD: defaultGKToCRDs(),
 			},
 			want: want{
@@ -59,7 +60,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should accept valid readiness check - none type",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withReadinessChecks(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
 					0,
 					v1.ReadinessCheck{
 						Type: v1.ReadinessCheckTypeNone,
@@ -74,7 +75,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should accept valid readiness check - nonEmpty type",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withReadinessChecks(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
 					0,
 					v1.ReadinessCheck{
 						Type:      v1.ReadinessCheckTypeNonEmpty,
@@ -90,7 +91,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should accept valid readiness check - matchTrue type",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withReadinessChecks(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
 					0,
 					v1.ReadinessCheck{
 						Type:      v1.ReadinessCheckTypeMatchTrue,
@@ -106,7 +107,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should accept valid readiness check - matchFalse type",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withReadinessChecks(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
 					0,
 					v1.ReadinessCheck{
 						Type:      v1.ReadinessCheckTypeMatchFalse,
@@ -122,7 +123,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should accept valid readiness check - matchString type",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withReadinessChecks(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
 					0,
 					v1.ReadinessCheck{
 						Type:        v1.ReadinessCheckTypeMatchString,
@@ -139,7 +140,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should reject invalid readiness check - matchInteger type",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withReadinessChecks(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
 					0,
 					v1.ReadinessCheck{
 						Type:         v1.ReadinessCheckTypeMatchInteger,
@@ -167,7 +168,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should accept valid readiness check - matchInteger type",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withReadinessChecks(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
 					0,
 					v1.ReadinessCheck{
 						Type:         v1.ReadinessCheckTypeMatchInteger,
@@ -189,7 +190,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should reject invalid readiness check - matchInteger type - type mismatch",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withReadinessChecks(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
 					0,
 					v1.ReadinessCheck{
 						Type:         v1.ReadinessCheckTypeMatchInteger,
@@ -217,7 +218,7 @@ func TestValidateReadinessCheck(t *testing.T) {
 		{
 			name: "should reject invalid readiness check - matchInteger type - type mismatch - multiple versions",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withReadinessChecks(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
 					0,
 					v1.ReadinessCheck{
 						Type:         v1.ReadinessCheckTypeMatchInteger,
@@ -247,6 +248,39 @@ func TestValidateReadinessCheck(t *testing.T) {
 						BadValue: "spec.someField",
 					},
 				},
+			},
+		},
+		{
+			name: "should accept valid readiness check - matchInteger type - free object allowed",
+			args: args{
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withReadinessChecks(
+					0,
+					v1.ReadinessCheck{
+						Type:         v1.ReadinessCheckTypeMatchInteger,
+						MatchInteger: 10,
+						FieldPath:    "status.atProvider.manifest.status.readyReplicas",
+					},
+				)),
+				gkToCRD: buildGkToCRDs(
+					defaultManagedCrdBuilder().withOption(func(crd *extv1.CustomResourceDefinition) {
+						crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["status"] = extv1.JSONSchemaProps{
+							Type: "object",
+							Properties: map[string]extv1.JSONSchemaProps{
+								"atProvider": {
+									Type: "object",
+									Properties: map[string]extv1.JSONSchemaProps{
+										"manifest": {
+											Type:                   "object",
+											XPreserveUnknownFields: ptr.To(true),
+										},
+									},
+								},
+							},
+						}
+					}).build()),
+			},
+			want: want{
+				errs: nil,
 			},
 		},
 	}

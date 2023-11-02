@@ -20,14 +20,13 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
-	iov1alpha1 "github.com/crossplane/crossplane/apis/apiextensions/fn/io/v1alpha1"
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 )
 
@@ -99,36 +98,16 @@ func ReadinessCheckFromV1(in *v1.ReadinessCheck) ReadinessCheck {
 		Type: ReadinessCheckType(in.Type),
 	}
 	if in.FieldPath != "" {
-		out.FieldPath = pointer.String(in.FieldPath)
+		out.FieldPath = ptr.To(in.FieldPath)
 	}
 
 	// NOTE(negz): ComposedTemplate doesn't use pointer values for optional
 	// strings, so today the empty string and 0 are equivalent to "unset".
 	if in.MatchString != "" {
-		out.MatchString = pointer.String(in.MatchString)
+		out.MatchString = ptr.To(in.MatchString)
 	}
 	if in.MatchInteger != 0 {
-		out.MatchInteger = pointer.Int64(in.MatchInteger)
-	}
-	if in.MatchCondition != nil {
-		out.MatchCondition = &MatchConditionReadinessCheck{
-			Type:   in.MatchCondition.Type,
-			Status: in.MatchCondition.Status,
-		}
-	}
-	return out
-}
-
-// ReadinessCheckFromDesiredReadinessCheck derives a ReadinessCheck from the supplied iov1alpha1.DesiredReadinessCheck.
-func ReadinessCheckFromDesiredReadinessCheck(in *iov1alpha1.DesiredReadinessCheck) ReadinessCheck {
-	if in == nil {
-		return ReadinessCheck{}
-	}
-	out := ReadinessCheck{
-		Type:         ReadinessCheckType(in.Type),
-		FieldPath:    in.FieldPath,
-		MatchString:  in.MatchString,
-		MatchInteger: in.MatchInteger,
+		out.MatchInteger = ptr.To[int64](in.MatchInteger)
 	}
 	if in.MatchCondition != nil {
 		out.MatchCondition = &MatchConditionReadinessCheck{
@@ -148,19 +127,6 @@ func ReadinessChecksFromComposedTemplate(t *v1.ComposedTemplate) []ReadinessChec
 	out := make([]ReadinessCheck, len(t.ReadinessChecks))
 	for i := range t.ReadinessChecks {
 		out[i] = ReadinessCheckFromV1(&t.ReadinessChecks[i])
-	}
-	return out
-}
-
-// ReadinessChecksFromDesiredResource derives readiness checks from the supplied desired
-// resource.
-func ReadinessChecksFromDesiredResource(dr *iov1alpha1.DesiredResource) []ReadinessCheck {
-	if dr == nil {
-		return nil
-	}
-	out := make([]ReadinessCheck, len(dr.ReadinessChecks))
-	for i := range dr.ReadinessChecks {
-		out[i] = ReadinessCheckFromDesiredReadinessCheck(&dr.ReadinessChecks[i])
 	}
 	return out
 }

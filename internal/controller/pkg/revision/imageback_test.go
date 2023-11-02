@@ -86,8 +86,10 @@ func TestImageBackend(t *testing.T) {
 			reason: "Should return error if package tag is not a valid image reference.",
 			args: args{
 				opts: []parser.BackendOption{PackageRevision(&v1.ProviderRevision{
-					Spec: v1.PackageRevisionSpec{
-						Package: ":test",
+					Spec: v1.ProviderRevisionSpec{
+						PackageRevisionSpec: v1.PackageRevisionSpec{
+							Package: ":test",
+						},
 					},
 				})},
 			},
@@ -100,8 +102,10 @@ func TestImageBackend(t *testing.T) {
 					MockFetch: fake.NewMockFetchFn(randImgDup, nil),
 				},
 				opts: []parser.BackendOption{PackageRevision(&v1.ProviderRevision{
-					Spec: v1.PackageRevisionSpec{
-						Package: "test/test:latest",
+					Spec: v1.ProviderRevisionSpec{
+						PackageRevisionSpec: v1.PackageRevisionSpec{
+							Package: "test/test:latest",
+						},
 					},
 				})},
 			},
@@ -114,12 +118,14 @@ func TestImageBackend(t *testing.T) {
 					MockFetch: fake.NewMockFetchFn(randImg, nil),
 				},
 				opts: []parser.BackendOption{PackageRevision(&v1.ProviderRevision{
-					Spec: v1.PackageRevisionSpec{
-						Package: "test/test:latest",
+					Spec: v1.ProviderRevisionSpec{
+						PackageRevisionSpec: v1.PackageRevisionSpec{
+							Package: "test/test:latest",
+						},
 					},
 				})},
 			},
-			want: errors.Wrap(io.EOF, errOpenPackageStream),
+			want: errors.Wrapf(io.EOF, errFmtNoPackageFileFound, 1, true),
 		},
 		"ErrEmptyImage": {
 			reason: "Should return error if image is empty.",
@@ -128,12 +134,14 @@ func TestImageBackend(t *testing.T) {
 					MockFetch: fake.NewMockFetchFn(empty.Image, nil),
 				},
 				opts: []parser.BackendOption{PackageRevision(&v1.ProviderRevision{
-					Spec: v1.PackageRevisionSpec{
-						Package: "test/test:latest",
+					Spec: v1.ProviderRevisionSpec{
+						PackageRevisionSpec: v1.PackageRevisionSpec{
+							Package: "test/test:latest",
+						},
 					},
 				})},
 			},
-			want: errors.Wrap(io.EOF, errOpenPackageStream),
+			want: errors.Wrapf(io.EOF, errFmtNoPackageFileFound, 0, false),
 		},
 		"ErrFetchPackage": {
 			reason: "Should return error if package is not in cache and we fail to fetch it.",
@@ -142,8 +150,10 @@ func TestImageBackend(t *testing.T) {
 					MockFetch: fake.NewMockFetchFn(nil, errBoom),
 				},
 				opts: []parser.BackendOption{PackageRevision(&v1.ProviderRevision{
-					Spec: v1.PackageRevisionSpec{
-						Package: "test/test:latest",
+					Spec: v1.ProviderRevisionSpec{
+						PackageRevisionSpec: v1.PackageRevisionSpec{
+							Package: "test/test:latest",
+						},
 					},
 				})},
 			},
