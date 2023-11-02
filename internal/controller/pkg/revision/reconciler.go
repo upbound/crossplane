@@ -907,6 +907,10 @@ func (r *Reconciler) runtimeManifestBuilderOptions(ctx context.Context, pwr v1.P
 		opts = append(opts, RuntimeManifestBuilderWithRuntimeConfig(rc))
 	}
 
+	if r.features.Enabled(features.EnableProviderIdentity) {
+		opts = append(opts, RuntimeManifestBuilderWithProviderIdentity())
+	}
+
 	// Note(turkenh): Until we completely remove the old controller config
 	// reference, we support both the old and the new way with DeploymentRuntimeConfig.
 	// If both are specified, we will start with DeploymentRuntimeConfig as the

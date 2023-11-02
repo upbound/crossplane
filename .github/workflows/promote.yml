@@ -61,7 +61,7 @@ jobs:
           username: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
           password: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }}
 
-      - name: Promote Artifacts in ockerHub, and Upbound Registry
+      - name: Promote Artifacts in DockerHub and Upbound Registry
         if: env.DOCKER_USR != '' && env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
         run: make -j2 promote BRANCH_NAME=${GITHUB_REF##*/}
         env:
