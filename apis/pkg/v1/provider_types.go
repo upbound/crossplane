@@ -45,19 +45,8 @@ type Provider struct {
 // ProviderSpec specifies details about a request to install a provider to
 // Crossplane.
 type ProviderSpec struct {
-	PackageSpec `json:",inline"`
-
-	// ControllerConfigRef references a ControllerConfig resource that will be
-	// used to configure the packaged controller Deployment.
-	// +optional
-	ControllerConfigReference *ControllerConfigReference `json:"controllerConfigRef,omitempty"`
-}
-
-// A ControllerConfigReference to a ControllerConfig resource that will be used
-// to configure the packaged controller Deployment.
-type ControllerConfigReference struct {
-	// Name of the ControllerConfig.
-	Name string `json:"name"`
+	PackageSpec        `json:",inline"`
+	PackageRuntimeSpec `json:",inline"`
 }
 
 // ProviderStatus represents the observed state of a Provider.
@@ -73,6 +62,12 @@ type ProviderList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Provider `json:"items"`
+}
+
+// ProviderRevisionSpec specifies configuration for a ProviderRevision.
+type ProviderRevisionSpec struct {
+	PackageRevisionSpec        `json:",inline"`
+	PackageRevisionRuntimeSpec `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
@@ -94,7 +89,7 @@ type ProviderRevision struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   PackageRevisionSpec   `json:"spec,omitempty"`
+	Spec   ProviderRevisionSpec  `json:"spec,omitempty"`
 	Status PackageRevisionStatus `json:"status,omitempty"`
 }
 

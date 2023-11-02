@@ -48,6 +48,33 @@ var (
 	LockGroupVersionKind = SchemeGroupVersion.WithKind(LockKind)
 )
 
+// Function type metadata.
+var (
+	FunctionKind             = reflect.TypeOf(Function{}).Name()
+	FunctionGroupKind        = schema.GroupKind{Group: Group, Kind: FunctionKind}.String()
+	FunctionKindAPIVersion   = FunctionKind + "." + SchemeGroupVersion.String()
+	FunctionGroupVersionKind = SchemeGroupVersion.WithKind(FunctionKind)
+)
+
+// FunctionRevision type metadata.
+var (
+	FunctionRevisionKind             = reflect.TypeOf(FunctionRevision{}).Name()
+	FunctionRevisionGroupKind        = schema.GroupKind{Group: Group, Kind: FunctionRevisionKind}.String()
+	FunctionRevisionKindAPIVersion   = FunctionRevisionKind + "." + SchemeGroupVersion.String()
+	FunctionRevisionGroupVersionKind = SchemeGroupVersion.WithKind(FunctionRevisionKind)
+)
+
+// DeploymentRuntimeConfig type metadata.
+var (
+	DeploymentRuntimeConfigKind             = reflect.TypeOf(DeploymentRuntimeConfig{}).Name()
+	DeploymentRuntimeConfigGroupKind        = schema.GroupKind{Group: Group, Kind: DeploymentRuntimeConfigKind}.String()
+	DeploymentRuntimeConfigKindAPIVersion   = DeploymentRuntimeConfigKind + "." + SchemeGroupVersion.String()
+	DeploymentRuntimeConfigGroupVersionKind = SchemeGroupVersion.WithKind(DeploymentRuntimeConfigKind)
+)
+
 func init() {
 	SchemeBuilder.Register(&Lock{}, &LockList{})
+	SchemeBuilder.Register(&Function{}, &FunctionList{})
+	SchemeBuilder.Register(&FunctionRevision{}, &FunctionRevisionList{})
+	SchemeBuilder.Register(&DeploymentRuntimeConfig{}, &DeploymentRuntimeConfigList{})
 }

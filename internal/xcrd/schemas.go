@@ -16,7 +16,10 @@ limitations under the License.
 
 package xcrd
 
-import extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+import (
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/utils/ptr"
+)
 
 // Label keys.
 const (
@@ -153,6 +156,8 @@ func CompositeResourceSpecProps() map[string]extv1.JSONSchemaProps {
 					Required: []string{"apiVersion", "kind"},
 				},
 			},
+			// Controllers should replace the entire resourceRefs array.
+			XListType: ptr.To("atomic"),
 		},
 		"publishConnectionDetailsTo": {
 			Type:     "object",
@@ -327,6 +332,10 @@ func CompositeResourceStatusProps() map[string]extv1.JSONSchemaProps {
 		"conditions": {
 			Description: "Conditions of the resource.",
 			Type:        "array",
+			XListMapKeys: []string{
+				"type",
+			},
+			XListType: ptr.To("map"),
 			Items: &extv1.JSONSchemaPropsOrArray{
 				Schema: &extv1.JSONSchemaProps{
 					Type:     "object",

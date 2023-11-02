@@ -26,7 +26,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
@@ -36,7 +36,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/fake"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 
-	iov1alpha1 "github.com/crossplane/crossplane/apis/apiextensions/fn/io/v1alpha1"
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 )
 
@@ -334,32 +333,32 @@ func TestExtractConnectionDetails(t *testing.T) {
 					{
 						Type:                    ConnectionDetailTypeFromConnectionSecretKey,
 						Name:                    "bar",
-						FromConnectionSecretKey: pointer.String("bar"),
+						FromConnectionSecretKey: ptr.To("bar"),
 					},
 					{
 						Type:                    ConnectionDetailTypeFromConnectionSecretKey,
 						Name:                    "none",
-						FromConnectionSecretKey: pointer.String("none"),
+						FromConnectionSecretKey: ptr.To("none"),
 					},
 					{
 						Type:                    ConnectionDetailTypeFromConnectionSecretKey,
 						Name:                    "convfoo",
-						FromConnectionSecretKey: pointer.String("foo"),
+						FromConnectionSecretKey: ptr.To("foo"),
 					},
 					{
 						Type:  ConnectionDetailTypeFromValue,
 						Name:  "fixed",
-						Value: pointer.String("value"),
+						Value: ptr.To("value"),
 					},
 					{
 						Type:          ConnectionDetailTypeFromFieldPath,
 						Name:          "name",
-						FromFieldPath: pointer.String("objectMeta.name"),
+						FromFieldPath: ptr.To("objectMeta.name"),
 					},
 					{
 						Type:          ConnectionDetailTypeFromFieldPath,
 						Name:          "generation",
-						FromFieldPath: pointer.String("objectMeta.generation"),
+						FromFieldPath: ptr.To("objectMeta.generation"),
 					},
 				},
 			},
@@ -386,8 +385,6 @@ func TestExtractConnectionDetails(t *testing.T) {
 		})
 	}
 }
-
-// TODO(negz): Implement me.
 
 func TestExtractConfigsFromTemplate(t *testing.T) {
 	tfk := v1.ConnectionDetailTypeFromConnectionSecretKey
@@ -418,9 +415,9 @@ func TestExtractConfigsFromTemplate(t *testing.T) {
 			args: args{
 				t: &v1.ComposedTemplate{
 					ConnectionDetails: []v1.ConnectionDetail{{
-						Name:                    pointer.String("cool-detail"),
+						Name:                    ptr.To("cool-detail"),
 						Type:                    &tfk,
-						FromConnectionSecretKey: pointer.String("cool-key"),
+						FromConnectionSecretKey: ptr.To("cool-key"),
 					}},
 				},
 			},
@@ -428,7 +425,7 @@ func TestExtractConfigsFromTemplate(t *testing.T) {
 				cfgs: []ConnectionDetailExtractConfig{{
 					Name:                    "cool-detail",
 					Type:                    ConnectionDetailTypeFromConnectionSecretKey,
-					FromConnectionSecretKey: pointer.String("cool-key"),
+					FromConnectionSecretKey: ptr.To("cool-key"),
 				}},
 			},
 		},
@@ -438,7 +435,7 @@ func TestExtractConfigsFromTemplate(t *testing.T) {
 				t: &v1.ComposedTemplate{
 					ConnectionDetails: []v1.ConnectionDetail{{
 						Type:                    &tfk,
-						FromConnectionSecretKey: pointer.String("cool-key"),
+						FromConnectionSecretKey: ptr.To("cool-key"),
 					}},
 				},
 			},
@@ -446,7 +443,7 @@ func TestExtractConfigsFromTemplate(t *testing.T) {
 				cfgs: []ConnectionDetailExtractConfig{{
 					Name:                    "cool-key",
 					Type:                    ConnectionDetailTypeFromConnectionSecretKey,
-					FromConnectionSecretKey: pointer.String("cool-key"),
+					FromConnectionSecretKey: ptr.To("cool-key"),
 				}},
 			},
 		},
@@ -454,84 +451,10 @@ func TestExtractConfigsFromTemplate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			cfgs := ExtractConfigsFromTemplate(tc.args.t)
+			cfgs := ExtractConfigsFromComposedTemplate(tc.args.t)
 
 			if diff := cmp.Diff(tc.want.cfgs, cfgs); diff != "" {
 				t.Errorf("\n%s\nExtractConfigsFromTemplate(...): -want, +got:\n%s", tc.reason, diff)
-			}
-
-		})
-	}
-}
-
-func TestExtractConfigsFromDesired(t *testing.T) {
-	type args struct {
-		d *iov1alpha1.DesiredResource
-	}
-	type want struct {
-		cfgs []ConnectionDetailExtractConfig
-	}
-
-	cases := map[string]struct {
-		reason string
-		args   args
-		want   want
-	}{
-		"NilResource": {
-			reason: "A nil desired resource should result in a nil slice of extract configs.",
-			args: args{
-				d: nil,
-			},
-			want: want{
-				cfgs: nil,
-			},
-		},
-		"ExplicitName": {
-			reason: "When a template's connection details have an explicit name, we should use it.",
-			args: args{
-				d: &iov1alpha1.DesiredResource{
-					ConnectionDetails: []iov1alpha1.DerivedConnectionDetail{{
-						Name:                    pointer.String("cool-detail"),
-						Type:                    iov1alpha1.ConnectionDetailTypeFromConnectionSecretKey,
-						FromConnectionSecretKey: pointer.String("cool-key"),
-					}},
-				},
-			},
-			want: want{
-				cfgs: []ConnectionDetailExtractConfig{{
-					Name:                    "cool-detail",
-					Type:                    ConnectionDetailTypeFromConnectionSecretKey,
-					FromConnectionSecretKey: pointer.String("cool-key"),
-				}},
-			},
-		},
-		"InferredName": {
-			reason: "When a template's connection details does not have an explicit name and is of TypeFromConnectionSecretKey, we should infer the name from the connection secret key.",
-			args: args{
-
-				d: &iov1alpha1.DesiredResource{
-					ConnectionDetails: []iov1alpha1.DerivedConnectionDetail{{
-						Type:                    iov1alpha1.ConnectionDetailTypeFromConnectionSecretKey,
-						FromConnectionSecretKey: pointer.String("cool-key"),
-					}},
-				},
-			},
-			want: want{
-				cfgs: []ConnectionDetailExtractConfig{{
-					Name:                    "cool-key",
-					Type:                    ConnectionDetailTypeFromConnectionSecretKey,
-					FromConnectionSecretKey: pointer.String("cool-key"),
-				}},
-			},
-		},
-	}
-
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			cfgs := ExtractConfigsFromDesired(tc.args.d)
-
-			if diff := cmp.Diff(tc.want.cfgs, cfgs); diff != "" {
-				t.Errorf("\n%s\nExtractConfigsFromDesired(...): -want, +got:\n%s", tc.reason, diff)
 			}
 
 		})

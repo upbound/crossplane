@@ -23,7 +23,7 @@ import (
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 )
@@ -50,7 +50,7 @@ func TestValidateConnectionDetails(t *testing.T) {
 		{
 			name: "should accept empty connection details",
 			args: args{
-				comp:    buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil),
+				comp:    buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil),
 				gkToCRD: defaultGKToCRDs(),
 			},
 			want: want{
@@ -60,7 +60,7 @@ func TestValidateConnectionDetails(t *testing.T) {
 		{
 			name: "should accept valid connection details, unknown type",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withConnectionDetails(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withConnectionDetails(
 					0,
 					v1.ConnectionDetail{
 						Type: &[]v1.ConnectionDetailType{v1.ConnectionDetailTypeUnknown}[0],
@@ -75,10 +75,10 @@ func TestValidateConnectionDetails(t *testing.T) {
 		{
 			name: "should accept valid connection detail specifying a valid fromFieldPath",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withConnectionDetails(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withConnectionDetails(
 					0,
 					v1.ConnectionDetail{
-						FromFieldPath: pointer.String("spec.someOtherField"),
+						FromFieldPath: ptr.To("spec.someOtherField"),
 					},
 				)),
 				gkToCRD: defaultGKToCRDs(),
@@ -90,13 +90,13 @@ func TestValidateConnectionDetails(t *testing.T) {
 		{
 			name: "should reject invalid connection detail specifying an invalid fromFieldPath",
 			args: args{
-				comp: buildDefaultComposition(t, v1.CompositionValidationModeLoose, nil, withConnectionDetails(
+				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withConnectionDetails(
 					0,
 					v1.ConnectionDetail{
-						FromFieldPath: pointer.String("spec.someWrongField"),
+						FromFieldPath: ptr.To("spec.someWrongField"),
 					},
 					v1.ConnectionDetail{
-						FromFieldPath: pointer.String("spec.someField"),
+						FromFieldPath: ptr.To("spec.someField"),
 					},
 				)),
 				gkToCRD: buildGkToCRDs(

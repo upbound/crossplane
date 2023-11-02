@@ -18,7 +18,9 @@ limitations under the License.
 package core
 
 import (
+	"context"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -32,8 +34,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/crossplane/crossplane-runtime/pkg/certificates"
@@ -53,6 +58,7 @@ import (
 	"github.com/crossplane/crossplane/internal/usage"
 	"github.com/crossplane/crossplane/internal/validation/apiextensions/v1/composition"
 	"github.com/crossplane/crossplane/internal/validation/apiextensions/v1/xrd"
+	"github.com/crossplane/crossplane/internal/xfn"
 	"github.com/crossplane/crossplane/internal/xpkg"
 )
 
@@ -81,43 +87,48 @@ func (c *Command) Run() error {
 type startCommand struct {
 	Profile string `placeholder:"host:port" help:"Serve runtime profiling data via HTTP at /debug/pprof."`
 
-	Namespace            string `short:"n" help:"Namespace used to unpack and run packages." default:"crossplane-system" env:"POD_NAMESPACE"`
-	ServiceAccount       string `help:"Name of the Crossplane Service Account." default:"crossplane" env:"POD_SERVICE_ACCOUNT"`
-	CacheDir             string `short:"c" help:"Directory used for caching package images." default:"/cache" env:"CACHE_DIR"`
-	LeaderElection       bool   `short:"l" help:"Use leader election for the controller manager." default:"false" env:"LEADER_ELECTION"`
-	Registry             string `short:"r" help:"Default registry used to fetch packages when not specified in tag." default:"${default_registry}" env:"REGISTRY"`
-	CABundlePath         string `help:"Additional CA bundle to use when fetching packages from registry." env:"CA_BUNDLE_PATH"`
-	WebhookTLSSecretName string `help:"The name of the TLS Secret that will be used by the webhook servers of core Crossplane and providers." env:"WEBHOOK_TLS_SECRET_NAME"`
-	WebhookTLSCertDir    string `help:"The directory of TLS certificate that will be used by the webhook server of core Crossplane. There should be tls.crt and tls.key files." env:"WEBHOOK_TLS_CERT_DIR"`
-	UserAgent            string `help:"The User-Agent header that will be set on all package requests." default:"${default_user_agent}" env:"USER_AGENT"`
+	Namespace      string `short:"n" help:"Namespace used to unpack and run packages." default:"crossplane-system" env:"POD_NAMESPACE"`
+	ServiceAccount string `help:"Name of the Crossplane Service Account." default:"crossplane" env:"POD_SERVICE_ACCOUNT"`
+	CacheDir       string `short:"c" help:"Directory used for caching package images." default:"/cache" env:"CACHE_DIR"`
+	LeaderElection bool   `short:"l" help:"Use leader election for the controller manager." default:"false" env:"LEADER_ELECTION"`
+	Registry       string `short:"r" help:"Default registry used to fetch packages when not specified in tag." default:"${default_registry}" env:"REGISTRY"`
+	CABundlePath   string `help:"Additional CA bundle to use when fetching packages from registry." env:"CA_BUNDLE_PATH"`
+	UserAgent      string `help:"The User-Agent header that will be set on all package requests." default:"${default_user_agent}" env:"USER_AGENT"`
 
-	SyncInterval        time.Duration `short:"s" help:"How often all resources will be double-checked for drift from the desired state." default:"1h"`
-	PollInterval        time.Duration `help:"How often individual resources will be checked for drift from the desired state." default:"1m"`
-	MaxReconcileRate    int           `help:"The global maximum rate per second at which resources may checked for drift from the desired state." default:"10"`
-	ESSTLSSecretName    string        `help:"The name of the TLS Secret that will be used by Crossplane and providers as clients of External Secret Store plugins." env:"ESS_TLS_SECRET_NAME"`
-	ESSTLSCertsDir      string        `help:"The path of the folder which will store TLS certificates to be used by Crossplane and providers for communicating with External Secret Store plugins." env:"ESS_TLS_CERTS_DIR"`
-	TLSServerSecretName string        `help:"The name of the TLS Secret that will store Crossplane's server certificate." env:"TLS_SERVER_SECRET_NAME"`
-	TLSServerCertsDir   string        `help:"The path of the folder which will store TLS server certificate of Crossplane." env:"TLS_SERVER_CERTS_DIR"`
-	TLSClientSecretName string        `help:"The name of the TLS Secret that will be store Crossplane's client certificate." env:"TLS_CLIENT_SECRET_NAME"`
-	TLSClientCertsDir   string        `help:"The path of the folder which will store TLS client certificate of Crossplane." env:"TLS_CLIENT_CERTS_DIR"`
+	PackageRuntime string `helm:"The package runtime to use for packages with a runtime (e.g. Providers and Functions)" default:"Deployment" env:"PACKAGE_RUNTIME"`
 
-	EnableEnvironmentConfigs                 bool `group:"Alpha Features:" help:"Enable support for EnvironmentConfigs."`
-	EnableExternalSecretStores               bool `group:"Alpha Features:" help:"Enable support for External Secret Stores."`
-	EnableCompositionFunctions               bool `group:"Alpha Features:" help:"Enable support for Composition Functions."`
-	EnableCompositionWebhookSchemaValidation bool `group:"Alpha Features:" help:"Enable support for Composition validation using schemas."`
-	EnableUsages                             bool `group:"Alpha Features:" help:"Enable support for deletion ordering and resource protection with Usages."`
+	SyncInterval     time.Duration `short:"s" help:"How often all resources will be double-checked for drift from the desired state." default:"1h"`
+	PollInterval     time.Duration `help:"How often individual resources will be checked for drift from the desired state." default:"1m"`
+	MaxReconcileRate int           `help:"The global maximum rate per second at which resources may checked for drift from the desired state." default:"10"`
+
+	WebhookEnabled bool `help:"Enable webhook configuration." default:"true" env:"WEBHOOK_ENABLED"`
+
+	TLSServerSecretName string `help:"The name of the TLS Secret that will store Crossplane's server certificate." env:"TLS_SERVER_SECRET_NAME"`
+	TLSServerCertsDir   string `help:"The path of the folder which will store TLS server certificate of Crossplane." env:"TLS_SERVER_CERTS_DIR"`
+	TLSClientSecretName string `help:"The name of the TLS Secret that will be store Crossplane's client certificate." env:"TLS_CLIENT_SECRET_NAME"`
+	TLSClientCertsDir   string `help:"The path of the folder which will store TLS client certificate of Crossplane." env:"TLS_CLIENT_CERTS_DIR"`
+
+	EnableEnvironmentConfigs   bool `group:"Alpha Features:" help:"Enable support for EnvironmentConfigs."`
+	EnableExternalSecretStores bool `group:"Alpha Features:" help:"Enable support for External Secret Stores."`
+	EnableUsages               bool `group:"Alpha Features:" help:"Enable support for deletion ordering and resource protection with Usages."`
+	EnableRealtimeCompositions bool `group:"Alpha Features:" help:"Enable support for realtime compositions, i.e. watching composed resources and reconciling compositions immediately when any of the composed resources is updated."`
+	// NOTE(hasheddan): this feature is unlikely to graduate from alpha status
+	// and should be removed when a runtime interface is introduced upstream.
+	// See https://github.com/crossplane/crossplane/issues/2671 for more
+	// information.
+	// TODO(turkenh): Consider removing this feature flag in favor of providing
+	//  a default DeploymentRuntimeConfig.
+	EnableProviderIdentity bool `group:"Alpha Features:" help:"Enable support for Provider identity."`
+
+	EnableCompositionFunctions               bool `group:"Beta Features:" default:"true" help:"Enable support for Composition Functions."`
+	EnableCompositionWebhookSchemaValidation bool `group:"Beta Features:" default:"true" help:"Enable support for Composition validation using schemas."`
+	EnableDeploymentRuntimeConfigs           bool `group:"Beta Features:" default:"true" help:"Enable support for Deployment Runtime Configs."`
 
 	// These are GA features that previously had alpha or beta feature flags.
 	// You can't turn off a GA feature. We maintain the flags to avoid breaking
 	// folks who are passing them, but they do nothing. The flags are hidden so
 	// they don't show up in the help output.
 	EnableCompositionRevisions bool `default:"true" hidden:""`
-
-	// NOTE(hasheddan): this feature is unlikely to graduate from alpha status
-	// and should be removed when a runtime interface is introduced upstream.
-	// See https://github.com/crossplane/crossplane/issues/2671 for more
-	// information.
-	EnableProviderIdentity bool `group:"Alpha Features:" help:"Enable support for Provider identity."`
 }
 
 // Run core Crossplane controllers.
@@ -151,7 +162,7 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 
 	cfg, err := ctrl.GetConfig()
 	if err != nil {
-		return errors.Wrap(err, "Cannot get config")
+		return errors.Wrap(err, "cannot get config")
 	}
 
 	cfg.WarningHandler = rest.NewWarningWriter(os.Stderr, rest.WarningWriterOptions{
@@ -159,19 +170,27 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		Deduplicate: true,
 	})
 
+	eb := record.NewBroadcaster()
 	mgr, err := ctrl.NewManager(ratelimiter.LimitRESTConfig(cfg, c.MaxReconcileRate), ctrl.Options{
 		Scheme: s,
 		Cache: cache.Options{
 			SyncPeriod: &c.SyncInterval,
 		},
 		WebhookServer: webhook.NewServer(webhook.Options{
-			CertDir: c.WebhookTLSCertDir,
+			CertDir: c.TLSServerCertsDir,
 			TLSOpts: []func(*tls.Config){
 				func(t *tls.Config) {
 					t.MinVersion = tls.VersionTLS13
 				},
 			},
 		}),
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				DisableFor:   []client.Object{&corev1.Secret{}},
+				Unstructured: false, // this is the default to not cache unstructured objects
+			},
+		},
+		EventBroadcaster: eb,
 
 		// controller-runtime uses both ConfigMaps and Leases for leader
 		// election by default. Leases expire after 15 seconds, with a
@@ -180,64 +199,100 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		// hundreds of reconciles per second and ~200rps to the API
 		// server. Switching to Leases only and longer leases appears to
 		// alleviate this.
-		LeaderElection:             c.LeaderElection,
-		LeaderElectionID:           "crossplane-leader-election-core",
-		LeaderElectionResourceLock: resourcelock.LeasesResourceLock,
-		LeaseDuration:              func() *time.Duration { d := 60 * time.Second; return &d }(),
-		RenewDeadline:              func() *time.Duration { d := 50 * time.Second; return &d }(),
+		LeaderElection:                c.LeaderElection,
+		LeaderElectionID:              "crossplane-leader-election-core",
+		LeaderElectionResourceLock:    resourcelock.LeasesResourceLock,
+		LeaderElectionReleaseOnCancel: true,
+		LeaseDuration:                 func() *time.Duration { d := 60 * time.Second; return &d }(),
+		RenewDeadline:                 func() *time.Duration { d := 50 * time.Second; return &d }(),
+
+		HealthProbeBindAddress: ":8081",
 	})
 	if err != nil {
-		return errors.Wrap(err, "Cannot create manager")
+		return errors.Wrap(err, "cannot create manager")
 	}
 
-	feats := &feature.Flags{}
-	if c.EnableEnvironmentConfigs {
-		feats.Enable(features.EnableAlphaEnvironmentConfigs)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaEnvironmentConfigs)
-	}
-	if c.EnableCompositionFunctions {
-		feats.Enable(features.EnableAlphaCompositionFunctions)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaCompositionFunctions)
-	}
-	if c.EnableCompositionWebhookSchemaValidation {
-		feats.Enable(features.EnableAlphaCompositionWebhookSchemaValidation)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaCompositionWebhookSchemaValidation)
-	}
-	if c.EnableUsages {
-		feats.Enable(features.EnableAlphaUsages)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaUsages)
-	}
-	if !c.EnableCompositionRevisions {
-		log.Info("CompositionRevisions feature is GA and cannot be disabled. The --enable-composition-revisions flag will be removed in a future release.")
-	}
-
-	if c.EnableProviderIdentity {
-		feats.Enable(features.EnableProviderIdentity)
-		log.Info("Alpha feature enabled", "flag", features.EnableProviderIdentity)
-	}
+	eb.StartLogging(func(format string, args ...interface{}) {
+		log.Debug(fmt.Sprintf(format, args...))
+	})
+	defer eb.Shutdown()
 
 	o := controller.Options{
 		Logger:                  log,
 		MaxConcurrentReconciles: c.MaxReconcileRate,
 		PollInterval:            c.PollInterval,
 		GlobalRateLimiter:       ratelimiter.NewGlobal(c.MaxReconcileRate),
-		Features:                feats,
+		Features:                &feature.Flags{},
 	}
 
+	if c.EnableProviderIdentity {
+		o.Features.Enable(features.EnableProviderIdentity)
+		log.Info("Alpha feature enabled", "flag", features.EnableProviderIdentity)
+	}
+
+	if !c.EnableCompositionRevisions {
+		log.Info("CompositionRevisions feature is GA and cannot be disabled. The --enable-composition-revisions flag will be removed in a future release.")
+	}
+
+	var functionRunner *xfn.PackagedFunctionRunner
+	if c.EnableCompositionFunctions {
+		o.Features.Enable(features.EnableBetaCompositionFunctions)
+		log.Info("Beta feature enabled", "flag", features.EnableBetaCompositionFunctions)
+		clienttls, err := certificates.LoadMTLSConfig(
+			filepath.Join(c.TLSClientCertsDir, initializer.SecretKeyCACert),
+			filepath.Join(c.TLSClientCertsDir, corev1.TLSCertKey),
+			filepath.Join(c.TLSClientCertsDir, corev1.TLSPrivateKeyKey),
+			false)
+
+		if err != nil {
+			return errors.Wrap(err, "cannot load client TLS certificates")
+		}
+		// We want all XR controllers to share the same gRPC clients.
+		functionRunner = xfn.NewPackagedFunctionRunner(mgr.GetClient(),
+			xfn.WithLogger(log),
+			xfn.WithTLSConfig(clienttls))
+
+		// Periodically remove clients for Functions that no longer exist.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go functionRunner.GarbageCollectConnections(ctx, 10*time.Minute)
+	}
+	if c.EnableEnvironmentConfigs {
+		o.Features.Enable(features.EnableAlphaEnvironmentConfigs)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaEnvironmentConfigs)
+	}
+	if c.EnableCompositionWebhookSchemaValidation {
+		o.Features.Enable(features.EnableBetaCompositionWebhookSchemaValidation)
+		log.Info("Beta feature enabled", "flag", features.EnableBetaCompositionWebhookSchemaValidation)
+	}
+	if c.EnableUsages {
+		o.Features.Enable(features.EnableAlphaUsages)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaUsages)
+	}
 	if c.EnableExternalSecretStores {
-		feats.Enable(features.EnableAlphaExternalSecretStores)
+		o.Features.Enable(features.EnableAlphaExternalSecretStores)
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaExternalSecretStores)
 
-		tlsConfig, err := certificates.LoadMTLSConfig(filepath.Join(c.ESSTLSCertsDir, initializer.SecretKeyCACert),
-			filepath.Join(c.ESSTLSCertsDir, corev1.TLSCertKey), filepath.Join(c.ESSTLSCertsDir, corev1.TLSPrivateKeyKey), false)
+		tcfg, err := certificates.LoadMTLSConfig(
+			filepath.Join(c.TLSClientCertsDir, initializer.SecretKeyCACert),
+			filepath.Join(c.TLSClientCertsDir, corev1.TLSCertKey),
+			filepath.Join(c.TLSClientCertsDir, corev1.TLSPrivateKeyKey),
+			false)
 		if err != nil {
-			return errors.Wrap(err, "Cannot load TLS certificates for ESS")
+			return errors.Wrap(err, "cannot load TLS certificates for external secret stores")
 		}
 
 		o.ESSOptions = &controller.ESSOptions{
-			TLSConfig:     tlsConfig,
-			TLSSecretName: &c.ESSTLSSecretName,
+			TLSConfig: tcfg,
 		}
+	}
+	if c.EnableRealtimeCompositions {
+		o.Features.Enable(features.EnableRealtimeCompositions)
+		log.Info("Alpha feature enabled", "flag", features.EnableRealtimeCompositions)
+	}
+	if c.EnableDeploymentRuntimeConfigs {
+		o.Features.Enable(features.EnableBetaDeploymentRuntimeConfigs)
+		log.Info("Beta feature enabled", "flag", features.EnableBetaDeploymentRuntimeConfigs)
 	}
 
 	ao := apiextensionscontroller.Options{
@@ -245,38 +300,49 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		Namespace:      c.Namespace,
 		ServiceAccount: c.ServiceAccount,
 		Registry:       c.Registry,
+		FunctionRunner: functionRunner,
 	}
 
 	if err := apiextensions.Setup(mgr, ao); err != nil {
-		return errors.Wrap(err, "Cannot setup API extension controllers")
+		return errors.Wrap(err, "cannot setup API extension controllers")
+	}
+
+	var pr pkgcontroller.PackageRuntime
+	switch c.PackageRuntime {
+	case string(pkgcontroller.PackageRuntimeDeployment):
+		pr = pkgcontroller.PackageRuntimeDeployment
+	case string(pkgcontroller.PackageRuntimeExternal):
+		pr = pkgcontroller.PackageRuntimeExternal
+	default:
+		return errors.Errorf("unsupported package runtime %q, supported runtimes are %q and %q",
+			c.PackageRuntime, pkgcontroller.PackageRuntimeDeployment, pkgcontroller.PackageRuntimeExternal)
 	}
 
 	po := pkgcontroller.Options{
-		Options:              o,
-		Cache:                xpkg.NewFsPackageCache(c.CacheDir, afero.NewOsFs()),
-		Namespace:            c.Namespace,
-		ServiceAccount:       c.ServiceAccount,
-		DefaultRegistry:      c.Registry,
-		Features:             feats,
-		FetcherOptions:       []xpkg.FetcherOpt{xpkg.WithUserAgent(c.UserAgent)},
-		WebhookTLSSecretName: c.WebhookTLSSecretName,
+		Options:         o,
+		Cache:           xpkg.NewFsPackageCache(c.CacheDir, afero.NewOsFs()),
+		Namespace:       c.Namespace,
+		ServiceAccount:  c.ServiceAccount,
+		DefaultRegistry: c.Registry,
+		FetcherOptions:  []xpkg.FetcherOpt{xpkg.WithUserAgent(c.UserAgent)},
+		PackageRuntime:  pr,
 	}
 
 	if c.CABundlePath != "" {
 		rootCAs, err := ParseCertificatesFromPath(c.CABundlePath)
 		if err != nil {
-			return errors.Wrap(err, "Cannot parse CA bundle")
+			return errors.Wrap(err, "cannot parse CA bundle")
 		}
 		po.FetcherOptions = append(po.FetcherOptions, xpkg.WithCustomCA(rootCAs))
 	}
 
 	if err := pkg.Setup(mgr, po); err != nil {
-		return errors.Wrap(err, "Cannot add packages controllers to manager")
+		return errors.Wrap(err, "cannot add packages controllers to manager")
 	}
 
 	// Registering webhooks with the manager is what actually starts the webhook
 	// server.
-	if c.WebhookTLSCertDir != "" {
+	if c.WebhookEnabled {
 		// TODO(muvaf): Once the implementation of other webhook handlers are
 		// fleshed out, implement a registration pattern similar to scheme
 		// registrations.
@@ -293,5 +359,34 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		}
 	}
 
-	return errors.Wrap(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
+	if err := c.SetupProbes(mgr); err != nil {
+		return errors.Wrap(err, "cannot setup probes")
+	}
+
+	return errors.Wrap(mgr.Start(ctrl.SetupSignalHandler()), "cannot start controller manager")
+}
+
+// SetupProbes sets up the health and readiness probes.
+func (c *startCommand) SetupProbes(mgr ctrl.Manager) error {
+	// Add default readiness probe
+	if err := mgr.AddReadyzCheck("ping", healthz.Ping); err != nil {
+		return errors.Wrap(err, "cannot create ping ready check")
+	}
+
+	// Add default health probe
+	if err := mgr.AddHealthzCheck("ping", healthz.Ping); err != nil {
+		return errors.Wrap(err, "cannot create ping health check")
+	}
+
+	// Add probes waiting for the webhook server if webhooks are enabled
+	if c.WebhookEnabled {
+		hookServer := mgr.GetWebhookServer()
+		if err := mgr.AddReadyzCheck("webhook", hookServer.StartedChecker()); err != nil {
+			return errors.Wrap(err, "cannot create webhook ready check")
+		}
+		if err := mgr.AddHealthzCheck("webhook", hookServer.StartedChecker()); err != nil {
+			return errors.Wrap(err, "cannot create webhook health check")
+		}
+	}
+	return nil
 }

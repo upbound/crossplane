@@ -28,6 +28,7 @@ import (
 
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
 	"github.com/crossplane/crossplane/apis/pkg/v1alpha1"
+	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
 )
 
 type adder interface {
@@ -66,9 +67,11 @@ func (e *EnqueueRequestForReferencingProviderRevisions) Generic(ctx context.Cont
 	e.add(ctx, evt.Object, q)
 }
 
-func (e *EnqueueRequestForReferencingProviderRevisions) add(ctx context.Context, obj runtime.Object, queue adder) {
-	cc, ok := obj.(*v1alpha1.ControllerConfig)
-	if !ok {
+func (e *EnqueueRequestForReferencingProviderRevisions) add(ctx context.Context, obj runtime.Object, queue adder) { //nolint:gocyclo // it will be simplified soon when we clean up the controller config
+	cc, isCC := obj.(*v1alpha1.ControllerConfig)
+	rc, isRC := obj.(*v1beta1.DeploymentRuntimeConfig)
+
+	if !isCC && !isRC {
 		return
 	}
 
@@ -79,9 +82,17 @@ func (e *EnqueueRequestForReferencingProviderRevisions) add(ctx context.Context,
 	}
 
 	for _, pr := range l.Items {
-		ref := pr.GetControllerConfigRef()
-		if ref != nil && ref.Name == cc.GetName() {
-			queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
+		if isCC {
+			ref := pr.GetControllerConfigRef()
+			if ref != nil && ref.Name == cc.GetName() {
+				queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
+			}
+		}
+		if isRC {
+			ref := pr.GetRuntimeConfigRef()
+			if ref != nil && ref.Name == rc.GetName() {
+				queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
+			}
 		}
 	}
 }
@@ -118,22 +129,32 @@ func (e *EnqueueRequestForReferencingFunctionRevisions) Generic(ctx context.Cont
 	e.add(ctx, evt.Object, q)
 }
 
-func (e *EnqueueRequestForReferencingFunctionRevisions) add(ctx context.Context, obj runtime.Object, queue adder) {
-	cc, ok := obj.(*v1alpha1.ControllerConfig)
-	if !ok {
+func (e *EnqueueRequestForReferencingFunctionRevisions) add(ctx context.Context, obj runtime.Object, queue adder) { //nolint:gocyclo // it will be simplified soon when we clean up the controller config
+	cc, isCC := obj.(*v1alpha1.ControllerConfig)
+	rc, isRC := obj.(*v1beta1.DeploymentRuntimeConfig)
+
+	if !isCC && !isRC {
 		return
 	}
 
-	l := &v1alpha1.FunctionRevisionList{}
+	l := &v1beta1.FunctionRevisionList{}
 	if err := e.client.List(ctx, l); err != nil {
 		// TODO(hasheddan): Handle this error?
 		return
 	}
 
 	for _, pr := range l.Items {
-		ref := pr.GetControllerConfigRef()
-		if ref != nil && ref.Name == cc.GetName() {
-			queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
+		if isCC {
+			ref := pr.GetControllerConfigRef()
+			if ref != nil && ref.Name == cc.GetName() {
+				queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
+			}
+		}
+		if isRC {
+			ref := pr.GetRuntimeConfigRef()
+			if ref != nil && ref.Name == rc.GetName() {
+				queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
+			}
 		}
 	}
 }
