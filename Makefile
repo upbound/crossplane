@@ -14,7 +14,6 @@ PLATFORMS ?= linux_amd64 linux_arm64 linux_arm linux_ppc64le darwin_amd64 darwin
 # ====================================================================================
 # Setup Output
 
-S3_BUCKET ?= crossplane.releases
 -include build/makelib/output.mk
 
 # ====================================================================================
@@ -31,7 +30,7 @@ GO_TEST_PARALLEL := $(shell echo $$(( $(NPROCS) / 2 )))
 
 GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/crossplane $(GO_PROJECT)/cmd/crank
 GO_TEST_PACKAGES = $(GO_PROJECT)/test/e2e
-GO_LDFLAGS += -X $(GO_PROJECT)/internal/version.version=$(VERSION)
+GO_LDFLAGS += -X $(GO_PROJECT)/internal/version.version=$(shell echo $(VERSION) | sed 's/[\.,-]up.*//' )
 GO_SUBDIRS += cmd internal apis
 GO111MODULE = on
 GOLANGCILINT_VERSION = 1.54.2
@@ -48,22 +47,11 @@ KIND_VERSION = v0.20.0
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================
-# Setup Helm
-
-HELM_BASE_URL = https://charts.crossplane.io
-HELM_S3_BUCKET = crossplane.charts
-HELM_CHARTS = crossplane
-HELM_CHART_LINT_ARGS_crossplane = --set nameOverride='',imagePullSecrets=''
-HELM_DOCS_ENABLED = true
-HELM_VALUES_TEMPLATE_SKIPPED = true
--include build/makelib/helm.mk
-
-# ====================================================================================
 # Setup Images
 # Due to the way that the shared build logic works, images should
 # all be in folders at the same level (no additional levels of nesting).
 
-REGISTRY_ORGS ?= docker.io/crossplane xpkg.upbound.io/crossplane
+REGISTRY_ORGS ?= docker.io/upbound xpkg.upbound.io/upbound
 IMAGES = crossplane
 -include build/makelib/imagelight.mk
 

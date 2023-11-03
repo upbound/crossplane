@@ -112,6 +112,13 @@ type startCommand struct {
 	EnableExternalSecretStores bool `group:"Alpha Features:" help:"Enable support for External Secret Stores."`
 	EnableUsages               bool `group:"Alpha Features:" help:"Enable support for deletion ordering and resource protection with Usages."`
 	EnableRealtimeCompositions bool `group:"Alpha Features:" help:"Enable support for realtime compositions, i.e. watching composed resources and reconciling compositions immediately when any of the composed resources is updated."`
+	// NOTE(hasheddan): this feature is unlikely to graduate from alpha status
+	// and should be removed when a runtime interface is introduced upstream.
+	// See https://github.com/crossplane/crossplane/issues/2671 for more
+	// information.
+	// TODO(turkenh): Consider removing this feature flag in favor of providing
+	//  a default DeploymentRuntimeConfig.
+	EnableProviderIdentity bool `group:"Alpha Features:" help:"Enable support for Provider identity."`
 
 	EnableCompositionFunctions               bool `group:"Beta Features:" default:"true" help:"Enable support for Composition Functions."`
 	EnableCompositionWebhookSchemaValidation bool `group:"Beta Features:" default:"true" help:"Enable support for Composition validation using schemas."`
@@ -216,6 +223,11 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		PollInterval:            c.PollInterval,
 		GlobalRateLimiter:       ratelimiter.NewGlobal(c.MaxReconcileRate),
 		Features:                &feature.Flags{},
+	}
+
+	if c.EnableProviderIdentity {
+		o.Features.Enable(features.EnableProviderIdentity)
+		log.Info("Alpha feature enabled", "flag", features.EnableProviderIdentity)
 	}
 
 	if !c.EnableCompositionRevisions {
