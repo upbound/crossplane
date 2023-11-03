@@ -43,7 +43,7 @@ function check_context() {
 
 # configure kind
 KIND_NAME=${KIND_NAME:-"kind"}
-IMAGE_REPOSITORY="xpkg.upbound.io/${PROJECT_NAME}/${PROJECT_NAME}"
+IMAGE_REPOSITORY="xpkg.upbound.io/upbound/${PROJECT_NAME}"
 case "${1:-}" in
   up)
     ${KIND} create cluster --name "${KIND_NAME}" --image "${KUBE_IMAGE}" --wait 5m
