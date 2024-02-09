@@ -110,12 +110,6 @@ func TestProviderUpgrade(t *testing.T) {
 			)).
 			Assess("UpgradeProvider", funcs.AllOf(
 				funcs.ApplyResources(FieldManager, manifests, "provider-upgrade.yaml"),
-				// Note(turkenh): There is a tiny instant after the upgrade where
-				// the provider was still reporting Installed/Healthy but the
-				// new version was not yet installed. This causes flakes in the
-				// test as ".spec.forProvider.conditionAfter[0].conditionReason: field not declared in schema" error.
-				// The following check is to avoid that.
-				funcs.ResourcesHaveFieldValueWithin(2*time.Minute, manifests, "provider-upgrade.yaml", "status.currentIdentifier", "xpkg.upbound.io/crossplane-contrib/provider-nop:v0.2.0"),
 				funcs.ResourcesHaveConditionWithin(2*time.Minute, manifests, "provider-upgrade.yaml", pkgv1.Healthy(), pkgv1.Active()),
 			)).
 			Assess("UpgradeManagedResource", funcs.AllOf(
@@ -125,11 +119,7 @@ func TestProviderUpgrade(t *testing.T) {
 			WithTeardown("DeleteUpgradedManagedResource", funcs.AllOf(
 				funcs.DeleteResources(manifests, "mr-upgrade.yaml"),
 				funcs.ResourcesDeletedWithin(1*time.Minute, manifests, "mr-upgrade.yaml"),
-			)).
-			WithTeardown("DeleteUpgradedProvider", funcs.AllOf(
-				funcs.DeleteResources(manifests, "provider-upgrade.yaml"),
-				funcs.ResourcesDeletedWithin(1*time.Minute, manifests, "provider-upgrade.yaml"),
-			)).Feature(),
+			)).WithTeardown("DeleteUpgradedProvider", funcs.ResourcesDeletedAfterListedAreGone(1*time.Minute, manifests, "provider-upgrade.yaml", nopList)).Feature(),
 	)
 }
 
@@ -227,7 +217,7 @@ func TestExternallyManagedServiceAccount(t *testing.T) {
 				funcs.ResourcesHaveFieldValueWithin(5*time.Minute, manifests, "claim.yaml", "status.coolerField", "I'M COOLER!"),
 			).
 			Assess("ExternalServiceAccountIsNotOwned",
-				funcs.ResourceHasFieldValueWithin(10*time.Second, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "external-sa", Namespace: namespace}}, "metadata.ownerReferences", nil),
+				funcs.ResourceHasFieldValueWithin(10*time.Second, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "external-sa", Namespace: namespace}}, "metadata.ownerReferences", funcs.NotFound),
 			).
 			Assess("DeploymentHasSpecFromDeploymentRuntimeConfig",
 				funcs.ResourceHasFieldValueWithin(10*time.Second, &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "provider-runtime", Namespace: namespace}}, "spec.template.spec.serviceAccountName", "external-sa"),

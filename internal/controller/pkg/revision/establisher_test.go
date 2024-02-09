@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	admv1 "k8s.io/api/admissionregistration/v1"
@@ -135,7 +136,7 @@ func TestAPIEstablisherEstablish(t *testing.T) {
 				refs: []xpv1.TypedReference{{Name: "ref-me"}},
 			},
 		},
-		"SuccessfulNotExistsEstablishControlWebhookEnabled": {
+		"SuccessfulNotExistsEstablishControlWebhookEnabledActiveRevision": {
 			reason: "Establishment should be successful if we can establish control for a parent of new objects in case webhooks are enabled.",
 			args: args{
 				est: &APIEstablisher{
@@ -305,8 +306,8 @@ func TestAPIEstablisherEstablish(t *testing.T) {
 				err: errors.New(errConversionWithNoWebhookCA),
 			},
 		},
-		"FailedGettingWebhookTLSSecret": {
-			reason: "Establishment should fail if a webhook TLS secret is given but cannot be fetched",
+		"FailedGettingWebhookTLSSecretControl": {
+			reason: "Establishment of a controlling revision should fail if a webhook TLS secret is given but cannot be fetched",
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
@@ -320,13 +321,35 @@ func TestAPIEstablisherEstablish(t *testing.T) {
 						},
 					},
 				},
+				control: true,
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errGetWebhookTLSSecret),
 			},
 		},
-		"FailedEmptyWebhookTLSSecret": {
-			reason: "Establishment should fail if a webhook TLS secret is given but empty",
+		"NoErrGettingWebhookTLSSecretNoControl": {
+			reason: "Establishment of a revision should not fail if a webhook TLS secret is given but cannot be fetched if we don't want to control resources",
+			args: args{
+				est: &APIEstablisher{
+					client: &test.MockClient{
+						MockGet: test.NewMockGetFn(errBoom),
+					},
+				},
+				parent: &v1.ProviderRevision{
+					Spec: v1.ProviderRevisionSpec{
+						PackageRevisionRuntimeSpec: v1.PackageRevisionRuntimeSpec{
+							TLSServerSecretName: &tlsServerSecretName,
+						},
+					},
+				},
+				control: false,
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"FailedEmptyWebhookTLSSecretControl": {
+			reason: "Establishment should fail for a controlling revision if a webhook TLS secret is given but empty if we want to control resources",
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
@@ -344,9 +367,35 @@ func TestAPIEstablisherEstablish(t *testing.T) {
 						},
 					},
 				},
+				control: true,
 			},
 			want: want{
 				err: errors.New(errWebhookSecretWithoutCABundle),
+			},
+		},
+		"NoErrEmptyWebhookTLSSecretNoControl": {
+			reason: "Establishment should not fail for an revision if a webhook TLS secret is given but empty if we don't want to control resources",
+			args: args{
+				est: &APIEstablisher{
+					client: &test.MockClient{
+						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+							s := &corev1.Secret{}
+							s.DeepCopyInto(obj.(*corev1.Secret))
+							return nil
+						},
+					},
+				},
+				parent: &v1.ProviderRevision{
+					Spec: v1.ProviderRevisionSpec{
+						PackageRevisionRuntimeSpec: v1.PackageRevisionRuntimeSpec{
+							TLSServerSecretName: &tlsServerSecretName,
+						},
+					},
+				},
+				control: false,
+			},
+			want: want{
+				err: nil,
 			},
 		},
 		"FailedCreate": {
@@ -422,7 +471,7 @@ func TestAPIEstablisherEstablish(t *testing.T) {
 	}
 }
 
-func TestAPIEstablisherRelinquish(t *testing.T) {
+func TestAPIEstablisherReleaseObjects(t *testing.T) {
 	errBoom := errors.New("boom")
 	controls := true
 	noControl := false
@@ -499,7 +548,7 @@ func TestAPIEstablisherRelinquish(t *testing.T) {
 				err: nil,
 			},
 		},
-		"CannotGetUpdate": {
+		"CannotUpdate": {
 			reason: "Should return an error if we cannot update the owned object.",
 			args: args{
 				est: &APIEstablisher{
@@ -571,8 +620,119 @@ func TestAPIEstablisherRelinquish(t *testing.T) {
 				err: nil,
 			},
 		},
-		"SuccessfulRelinquish": {
-			reason: "ReleaseObjects should be successful if we can relinquish control of existing objects",
+		"AlreadyReleased": {
+			reason: "ReleaseObjects should make no updates if the object is already released.",
+			args: args{
+				est: &APIEstablisher{
+					client: &test.MockClient{
+						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+							o := obj.(*unstructured.Unstructured)
+							o.SetOwnerReferences([]metav1.OwnerReference{
+								{
+									APIVersion: "pkg.crossplane.io/v1",
+									Kind:       "Provider",
+									Name:       "provider-helm",
+									UID:        "some-other-uid-1234",
+									Controller: &noControl,
+								},
+								{
+									APIVersion: "pkg.crossplane.io/v1",
+									Kind:       "ProviderRevision",
+									Name:       "provider-helm-ce18dd03e6e4",
+									UID:        "some-unique-uid-2312",
+									Controller: &noControl,
+								},
+							})
+							return nil
+						},
+						MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+							t.Errorf("should not have called update")
+							return nil
+						},
+					},
+				},
+				parent: &v1.ProviderRevision{
+					ObjectMeta: metav1.ObjectMeta{
+						UID: "some-unique-uid-2312",
+					},
+					Status: v1.PackageRevisionStatus{
+						ObjectRefs: []xpv1.TypedReference{
+							{
+								APIVersion: "apiextensions.k8s.io/v1",
+								Kind:       "CustomResourceDefinition",
+								Name:       "releases.helm.crossplane.io",
+							},
+						},
+					},
+				},
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"OwnedIfNotAlready": {
+			reason: "ReleaseObjects should put owner reference back if we are not already the owner.",
+			args: args{
+				est: &APIEstablisher{
+					client: &test.MockClient{
+						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+							o := obj.(*unstructured.Unstructured)
+							o.SetOwnerReferences([]metav1.OwnerReference{
+								{
+									APIVersion: "pkg.crossplane.io/v1",
+									Kind:       "Provider",
+									Name:       "provider-helm",
+									UID:        "some-other-uid-1234",
+									Controller: &noControl,
+								},
+							})
+							return nil
+						},
+						MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+							o := obj.(*unstructured.Unstructured)
+							if len(o.GetOwnerReferences()) != 2 {
+								t.Errorf("expected 2 owner references, got %d", len(o.GetOwnerReferences()))
+							}
+							found := false
+							for _, ref := range o.GetOwnerReferences() {
+								if ref.Kind == "ProviderRevision" && ref.UID == "some-unique-uid-2312" {
+									found = true
+									if ptr.ToBool(ref.Controller) {
+										t.Errorf("expected controller to be false, got %t", *ref.Controller)
+									}
+								}
+							}
+							if !found {
+								t.Errorf("expected to find owner reference for revision with uid some-unique-uid-2312")
+							}
+							return nil
+						},
+					},
+				},
+				parent: &v1.ProviderRevision{
+					TypeMeta: metav1.TypeMeta{
+						Kind: "ProviderRevision",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						UID: "some-unique-uid-2312",
+					},
+					Status: v1.PackageRevisionStatus{
+						ObjectRefs: []xpv1.TypedReference{
+							{
+								APIVersion: "apiextensions.k8s.io/v1",
+								Kind:       "CustomResourceDefinition",
+								Name:       "releases.helm.crossplane.io",
+							},
+						},
+					},
+				},
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"SuccessfulRelease": {
+			reason: "ReleaseObjects should be successful if we can release control of existing objects",
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{

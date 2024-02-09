@@ -25,9 +25,11 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/spf13/afero"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 
@@ -45,8 +47,12 @@ type Cmd struct {
 	ContextFiles           map[string]string `mapsep:"," help:"Comma-separated context key-value pairs to pass to the Function pipeline. Values must be files containing JSON."`
 	ContextValues          map[string]string `mapsep:"," help:"Comma-separated context key-value pairs to pass to the Function pipeline. Values must be JSON. Keys take precedence over --context-files."`
 	IncludeFunctionResults bool              `short:"r" help:"Include informational and warning messages from Functions in the rendered output as resources of kind: Result."`
+	IncludeFullXR          bool              `short:"x" help:"Include a direct copy of the input XR's spec and metadata fields in the rendered output."`
 	ObservedResources      string            `short:"o" placeholder:"PATH" type:"path" help:"A YAML file or directory of YAML files specifying the observed state of composed resources."`
-	Timeout                time.Duration     `help:"How long to run before timing out." default:"1m"`
+	ExtraResources         string            `short:"e" placeholder:"PATH" type:"path" help:"A YAML file or directory of YAML files specifying extra resources to pass to the Function pipeline."`
+	IncludeContext         bool              `short:"c" help:"Include the context in the rendered output as a resource of kind: Context."`
+
+	Timeout time.Duration `help:"How long to run before timing out." default:"1m"`
 
 	fs afero.Fs
 }
@@ -99,6 +105,10 @@ Examples:
   # Pass context values to the Function pipeline.
   crossplane beta render xr.yaml composition.yaml functions.yaml \
     --context-values=apiextensions.crossplane.io/environment='{"key": "value"}'
+
+  # Pass extra resources Functions in the pipeline can request.
+  crossplane beta render xr.yaml composition.yaml functions.yaml \
+	--extra-resources=extra-resources.yaml
 `
 }
 
@@ -109,7 +119,7 @@ func (c *Cmd) AfterApply() error {
 }
 
 // Run render.
-func (c *Cmd) Run(k *kong.Context, _ logging.Logger) error { //nolint:gocyclo // Only a touch over.
+func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyclo // Only a touch over.
 	xr, err := LoadCompositeResource(c.fs, c.CompositeResource)
 	if err != nil {
 		return errors.Wrapf(err, "cannot load composite resource from %q", c.CompositeResource)
@@ -147,6 +157,14 @@ func (c *Cmd) Run(k *kong.Context, _ logging.Logger) error { //nolint:gocyclo //
 		}
 	}
 
+	ers := []unstructured.Unstructured{}
+	if c.ExtraResources != "" {
+		ers, err = LoadExtraResources(c.fs, c.ExtraResources)
+		if err != nil {
+			return errors.Wrapf(err, "cannot load extra resources from %q", c.ExtraResources)
+		}
+	}
+
 	fctx := map[string][]byte{}
 	for k, filename := range c.ContextFiles {
 		v, err := afero.ReadFile(c.fs, filename)
@@ -162,11 +180,12 @@ func (c *Cmd) Run(k *kong.Context, _ logging.Logger) error { //nolint:gocyclo //
 	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
 	defer cancel()
 
-	out, err := Render(ctx, Inputs{
+	out, err := Render(ctx, logger, Inputs{
 		CompositeResource: xr,
 		Composition:       comp,
 		Functions:         fns,
 		ObservedResources: ors,
+		ExtraResources:    ers,
 		Context:           fctx,
 	})
 	if err != nil {
@@ -182,6 +201,26 @@ func (c *Cmd) Run(k *kong.Context, _ logging.Logger) error { //nolint:gocyclo //
 
 	s := json.NewSerializerWithOptions(json.DefaultMetaFactory, nil, nil, json.SerializerOptions{Yaml: true})
 
+	if c.IncludeFullXR {
+		xrSpec, err := fieldpath.Pave(xr.Object).GetValue("spec")
+		if err != nil {
+			return errors.Wrapf(err, "cannot get composite resource spec")
+		}
+
+		if err := fieldpath.Pave(out.CompositeResource.Object).SetValue("spec", xrSpec); err != nil {
+			return errors.Wrapf(err, "cannot set composite resource spec")
+		}
+
+		xrMeta, err := fieldpath.Pave(xr.Object).GetValue("metadata")
+		if err != nil {
+			return errors.Wrapf(err, "cannot get composite resource metadata")
+		}
+
+		if err := fieldpath.Pave(out.CompositeResource.Object).SetValue("metadata", xrMeta); err != nil {
+			return errors.Wrapf(err, "cannot set composite resource metadata")
+		}
+	}
+
 	fmt.Fprintln(k.Stdout, "---")
 	if err := s.Encode(out.CompositeResource, os.Stdout); err != nil {
 		return errors.Wrapf(err, "cannot marshal composite resource %q to YAML", xr.GetName())
@@ -190,8 +229,7 @@ func (c *Cmd) Run(k *kong.Context, _ logging.Logger) error { //nolint:gocyclo //
 	for i := range out.ComposedResources {
 		fmt.Fprintln(k.Stdout, "---")
 		if err := s.Encode(&out.ComposedResources[i], os.Stdout); err != nil {
-			// TODO(negz): Use composed name annotation instead.
-			return errors.Wrapf(err, "cannot marshal composed resource %q to YAML", out.ComposedResources[i].GetName())
+			return errors.Wrapf(err, "cannot marshal composed resource %q to YAML", out.ComposedResources[i].GetAnnotations()[AnnotationKeyCompositionResourceName])
 		}
 	}
 
@@ -201,6 +239,13 @@ func (c *Cmd) Run(k *kong.Context, _ logging.Logger) error { //nolint:gocyclo //
 			if err := s.Encode(&out.Results[i], os.Stdout); err != nil {
 				return errors.Wrap(err, "cannot marshal result to YAML")
 			}
+		}
+	}
+
+	if c.IncludeContext {
+		fmt.Fprintln(k.Stdout, "---")
+		if err := s.Encode(out.Context, os.Stdout); err != nil {
+			return errors.Wrap(err, "cannot marshal context to YAML")
 		}
 	}
 

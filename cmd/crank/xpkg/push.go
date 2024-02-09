@@ -54,9 +54,6 @@ const (
 	errFmtWriteIndex    = "failed to push an OCI image index of %d packages"
 )
 
-// DefaultRegistry for pushing Crossplane packages.
-const DefaultRegistry = "xpkg.upbound.io"
-
 // pushCmd pushes a package.
 type pushCmd struct {
 	// Arguments.
@@ -73,7 +70,8 @@ func (c *pushCmd) Help() string {
 	return `
 Packages can be pushed to any OCI registry. Packages are pushed to the
 xpkg.upbound.io registry by default. A package's OCI tag must be a semantic
-version.
+version. Credentials for the registry are automatically retrieved from xpkg login 
+and dockers configuration as fallback.
 
 Examples:
 
@@ -93,7 +91,7 @@ func (c *pushCmd) AfterApply() error {
 
 // Run runs the push cmd.
 func (c *pushCmd) Run(logger logging.Logger) error { //nolint:gocyclo // This feels easier to read as-is.
-	tag, err := name.NewTag(c.Package, name.WithDefaultRegistry(DefaultRegistry))
+	tag, err := name.NewTag(c.Package, name.WithDefaultRegistry(xpkg.DefaultRegistry))
 	if err != nil {
 		return errors.Wrapf(err, errFmtNewTag, c.Package)
 	}
@@ -132,6 +130,7 @@ func (c *pushCmd) Run(logger logging.Logger) error { //nolint:gocyclo // This fe
 			return errors.Wrapf(err, errFmtPushPackage, c.PackageFiles[0])
 		}
 		logger.Debug("Pushed package", "path", c.PackageFiles[0], "ref", tag.String())
+		return nil
 	}
 
 	// If there's more than one package file we'll write (push) them all by
@@ -157,7 +156,7 @@ func (c *pushCmd) Run(logger logging.Logger) error { //nolint:gocyclo // This fe
 				return errors.Wrapf(err, errFmtGetDigest, file)
 			}
 			n := fmt.Sprintf("%s@%s", tag.Repository.Name(), d.String())
-			ref, err := name.NewDigest(n, name.WithDefaultRegistry(DefaultRegistry))
+			ref, err := name.NewDigest(n, name.WithDefaultRegistry(xpkg.DefaultRegistry))
 			if err != nil {
 				return errors.Wrapf(err, errFmtNewDigest, n, file)
 			}

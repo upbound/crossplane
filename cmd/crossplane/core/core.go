@@ -21,14 +21,11 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net/http"
-	"net/http/pprof"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/alecthomas/kong"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/afero"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,6 +51,7 @@ import (
 	pkgcontroller "github.com/crossplane/crossplane/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/internal/features"
 	"github.com/crossplane/crossplane/internal/initializer"
+	"github.com/crossplane/crossplane/internal/metrics"
 	"github.com/crossplane/crossplane/internal/transport"
 	"github.com/crossplane/crossplane/internal/usage"
 	"github.com/crossplane/crossplane/internal/validation/apiextensions/v1/composition"
@@ -61,8 +59,6 @@ import (
 	"github.com/crossplane/crossplane/internal/xfn"
 	"github.com/crossplane/crossplane/internal/xpkg"
 )
-
-const pprofPath = "/debug/pprof/"
 
 // Command runs the core crossplane controllers
 type Command struct {
@@ -73,7 +69,7 @@ type Command struct {
 // KongVars represent the kong variables associated with the CLI parser
 // required for the Registry default variable interpolation.
 var KongVars = kong.Vars{
-	"default_registry":   name.DefaultRegistry,
+	"default_registry":   xpkg.DefaultRegistry,
 	"default_user_agent": transport.DefaultUserAgent,
 }
 
@@ -112,6 +108,7 @@ type startCommand struct {
 	EnableExternalSecretStores bool `group:"Alpha Features:" help:"Enable support for External Secret Stores."`
 	EnableUsages               bool `group:"Alpha Features:" help:"Enable support for deletion ordering and resource protection with Usages."`
 	EnableRealtimeCompositions bool `group:"Alpha Features:" help:"Enable support for realtime compositions, i.e. watching composed resources and reconciling compositions immediately when any of the composed resources is updated."`
+	EnableSSAClaims            bool `group:"Alpha Features:" help:"Enable support for using Kubernetes server-side apply to sync claims with composite resources (XRs)."`
 	// NOTE(hasheddan): this feature is unlikely to graduate from alpha status
 	// and should be removed when a runtime interface is introduced upstream.
 	// See https://github.com/crossplane/crossplane/issues/2671 for more
@@ -121,6 +118,7 @@ type startCommand struct {
 	EnableProviderIdentity bool `group:"Alpha Features:" help:"Enable support for Provider identity."`
 
 	EnableCompositionFunctions               bool `group:"Beta Features:" default:"true" help:"Enable support for Composition Functions."`
+	EnableCompositionFunctionsExtraResources bool `group:"Beta Features:" default:"true" help:"Enable support for Composition Functions Extra Resources. Only respected if --enable-composition-functions is set to true."`
 	EnableCompositionWebhookSchemaValidation bool `group:"Beta Features:" default:"true" help:"Enable support for Composition validation using schemas."`
 	EnableDeploymentRuntimeConfigs           bool `group:"Beta Features:" default:"true" help:"Enable support for Deployment Runtime Configs."`
 
@@ -133,33 +131,6 @@ type startCommand struct {
 
 // Run core Crossplane controllers.
 func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //nolint:gocyclo // Only slightly over.
-	if c.Profile != "" {
-		// NOTE(negz): These log messages attempt to match those emitted by
-		// controller-runtime's metrics HTTP server when it starts.
-		log.Debug("Profiling server is starting to listen", "addr", c.Profile)
-		go func() {
-
-			// Registering these explicitly ensures they're only served by the
-			// HTTP server we start explicitly for profiling.
-			mux := http.NewServeMux()
-			mux.HandleFunc(pprofPath, pprof.Index)
-			mux.HandleFunc(filepath.Join(pprofPath, "cmdline"), pprof.Cmdline)
-			mux.HandleFunc(filepath.Join(pprofPath, "profile"), pprof.Profile)
-			mux.HandleFunc(filepath.Join(pprofPath, "symbol"), pprof.Symbol)
-			mux.HandleFunc(filepath.Join(pprofPath, "trace"), pprof.Trace)
-
-			s := &http.Server{
-				Addr:         c.Profile,
-				ReadTimeout:  2 * time.Minute,
-				WriteTimeout: 2 * time.Minute,
-				Handler:      mux,
-			}
-			log.Debug("Starting server", "type", "pprof", "path", pprofPath, "addr", s.Addr)
-			err := s.ListenAndServe()
-			log.Debug("Profiling server has stopped listening", "error", err)
-		}()
-	}
-
 	cfg, err := ctrl.GetConfig()
 	if err != nil {
 		return errors.Wrap(err, "cannot get config")
@@ -206,6 +177,7 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		LeaseDuration:                 func() *time.Duration { d := 60 * time.Second; return &d }(),
 		RenewDeadline:                 func() *time.Duration { d := 50 * time.Second; return &d }(),
 
+		PprofBindAddress:       c.Profile,
 		HealthProbeBindAddress: ":8081",
 	})
 	if err != nil {
@@ -238,19 +210,30 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 	if c.EnableCompositionFunctions {
 		o.Features.Enable(features.EnableBetaCompositionFunctions)
 		log.Info("Beta feature enabled", "flag", features.EnableBetaCompositionFunctions)
+
+		if c.EnableCompositionFunctionsExtraResources {
+			o.Features.Enable(features.EnableBetaCompositionFunctionsExtraResources)
+			log.Info("Beta feature enabled", "flag", features.EnableBetaCompositionFunctionsExtraResources)
+		}
+
 		clienttls, err := certificates.LoadMTLSConfig(
 			filepath.Join(c.TLSClientCertsDir, initializer.SecretKeyCACert),
 			filepath.Join(c.TLSClientCertsDir, corev1.TLSCertKey),
 			filepath.Join(c.TLSClientCertsDir, corev1.TLSPrivateKeyKey),
 			false)
-
 		if err != nil {
 			return errors.Wrap(err, "cannot load client TLS certificates")
 		}
+
+		m := xfn.NewMetrics()
+		metrics.Registry.MustRegister(m)
+
 		// We want all XR controllers to share the same gRPC clients.
 		functionRunner = xfn.NewPackagedFunctionRunner(mgr.GetClient(),
 			xfn.WithLogger(log),
-			xfn.WithTLSConfig(clienttls))
+			xfn.WithTLSConfig(clienttls),
+			xfn.WithInterceptorCreators(m),
+		)
 
 		// Periodically remove clients for Functions that no longer exist.
 		ctx, cancel := context.WithCancel(context.Background())
@@ -287,19 +270,20 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		}
 	}
 	if c.EnableRealtimeCompositions {
-		o.Features.Enable(features.EnableRealtimeCompositions)
-		log.Info("Alpha feature enabled", "flag", features.EnableRealtimeCompositions)
+		o.Features.Enable(features.EnableAlphaRealtimeCompositions)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaRealtimeCompositions)
 	}
 	if c.EnableDeploymentRuntimeConfigs {
 		o.Features.Enable(features.EnableBetaDeploymentRuntimeConfigs)
 		log.Info("Beta feature enabled", "flag", features.EnableBetaDeploymentRuntimeConfigs)
 	}
+	if c.EnableSSAClaims {
+		o.Features.Enable(features.EnableAlphaClaimSSA)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaClaimSSA)
+	}
 
 	ao := apiextensionscontroller.Options{
 		Options:        o,
-		Namespace:      c.Namespace,
-		ServiceAccount: c.ServiceAccount,
-		Registry:       c.Registry,
 		FunctionRunner: functionRunner,
 	}
 
