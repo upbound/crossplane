@@ -17,7 +17,9 @@ package composite
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"reflect"
 	"sort"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -41,6 +43,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
 
 	"github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1beta1"
+	"github.com/crossplane/crossplane/internal/names"
 )
 
 // Error strings.
@@ -56,6 +59,11 @@ const (
 	errXRAsStruct               = "cannot encode composite resource to protocol buffer Struct well-known type"
 	errEnvAsStruct              = "cannot encode environment to protocol buffer Struct well-known type"
 	errStructFromUnstructured   = "cannot create Struct"
+	errGetExtraResourceByName   = "cannot get extra resource by name"
+	errNilResourceSelector      = "resource selector should not be nil"
+	errExtraResourceAsStruct    = "cannot encode extra resource to protocol buffer Struct well-known type"
+	errUnknownResourceSelector  = "cannot get extra resource by name: unknown resource selector type"
+	errListExtraResources       = "cannot list extra resources"
 
 	errFmtApplyCD                    = "cannot apply composed resource %q"
 	errFmtFetchCDConnectionDetails   = "cannot fetch connection details for composed resource %q (a %s named %s)"
@@ -65,6 +73,7 @@ const (
 	errFmtUnmarshalDesiredCD         = "cannot unmarshal desired composed resource %q from RunFunctionResponse"
 	errFmtCDAsStruct                 = "cannot encode composed resource %q to protocol buffer Struct well-known type"
 	errFmtFatalResult                = "pipeline step %q returned a fatal result: %s"
+	errFmtFunctionMaxIterations      = "step %q requirements didn't stabilize after the maximum number of iterations (%d)"
 )
 
 // Server-side-apply field owners. We need two of these because it's possible
@@ -79,15 +88,22 @@ const (
 	// resources (XR).
 	FieldOwnerXR = "apiextensions.crossplane.io/composite"
 
-	// FieldOwnerComposed owns the fields this controller mutates on composed
+	// FieldOwnerComposedPrefix owns the fields this controller mutates on composed
 	// resources.
-	FieldOwnerComposed = "apiextensions.crossplane.io/composed"
+	FieldOwnerComposedPrefix = "apiextensions.crossplane.io/composed"
 )
 
 const (
 	// FunctionContextKeyEnvironment is used to store the Composition
 	// Environment in the Function context.
 	FunctionContextKeyEnvironment = "apiextensions.crossplane.io/environment"
+)
+
+const (
+	// MaxRequirementsIterations is the maximum number of times a Function should be called,
+	// limiting the number of times it can request for extra resources, capped for
+	// safety.
+	MaxRequirementsIterations = 5
 )
 
 // A FunctionComposer supports composing resources using a pipeline of
@@ -99,10 +115,11 @@ type FunctionComposer struct {
 }
 
 type xr struct {
-	NameGenerator
+	names.NameGenerator
 	managed.ConnectionDetailsFetcher
 	ComposedResourceObserver
 	ComposedResourceGarbageCollector
+	ExtraResourcesFetcher
 }
 
 // A FunctionRunner runs a single Composition Function.
@@ -130,6 +147,19 @@ type ComposedResourceObserverFn func(ctx context.Context, xr resource.Composite)
 // ObserveComposedResources observes existing composed resources.
 func (fn ComposedResourceObserverFn) ObserveComposedResources(ctx context.Context, xr resource.Composite) (ComposedResourceStates, error) {
 	return fn(ctx, xr)
+}
+
+// A ExtraResourcesFetcher gets extra resources matching a selector.
+type ExtraResourcesFetcher interface {
+	Fetch(ctx context.Context, rs *v1beta1.ResourceSelector) (*v1beta1.Resources, error)
+}
+
+// An ExtraResourcesFetcherFn gets extra resources matching the selector.
+type ExtraResourcesFetcherFn func(ctx context.Context, rs *v1beta1.ResourceSelector) (*v1beta1.Resources, error)
+
+// Fetch gets extra resources matching the selector.
+func (fn ExtraResourcesFetcherFn) Fetch(ctx context.Context, rs *v1beta1.ResourceSelector) (*v1beta1.Resources, error) {
+	return fn(ctx, rs)
 }
 
 // A ComposedResourceGarbageCollector deletes observed composed resources that
@@ -167,6 +197,14 @@ func WithComposedResourceObserver(g ComposedResourceObserver) FunctionComposerOp
 	}
 }
 
+// WithExtraResourcesFetcher configures how the FunctionComposer should fetch extra
+// resources requested by functions.
+func WithExtraResourcesFetcher(f ExtraResourcesFetcher) FunctionComposerOption {
+	return func(p *FunctionComposer) {
+		p.composite.ExtraResourcesFetcher = f
+	}
+}
+
 // WithComposedResourceGarbageCollector configures how the FunctionComposer should
 // garbage collect undesired composed resources.
 func WithComposedResourceGarbageCollector(d ComposedResourceGarbageCollector) FunctionComposerOption {
@@ -191,7 +229,7 @@ func NewFunctionComposer(kube client.Client, r FunctionRunner, o ...FunctionComp
 			ConnectionDetailsFetcher:         f,
 			ComposedResourceObserver:         NewExistingComposedResourceObserver(kube, f),
 			ComposedResourceGarbageCollector: NewDeletingComposedResourceGarbageCollector(kube),
-			NameGenerator:                    NewAPINameGenerator(kube),
+			NameGenerator:                    names.NewNameGenerator(kube),
 		},
 
 		pipeline: r,
@@ -263,11 +301,55 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 			req.Input = in
 		}
 
-		// TODO(negz): Generate a content-addressable tag for this request.
-		// Perhaps using https://github.com/cerbos/protoc-gen-go-hashpb ?
-		rsp, err := c.pipeline.RunFunction(ctx, fn.FunctionRef.Name, req)
-		if err != nil {
-			return CompositionResult{}, errors.Wrapf(err, errFmtRunPipelineStep, fn.Step)
+		// Used to store the requirements returned at the previous iteration.
+		var requirements *v1beta1.Requirements
+		// Used to store the response of the function at the previous iteration.
+		var rsp *v1beta1.RunFunctionResponse
+
+		for i := int64(0); i <= MaxRequirementsIterations; i++ {
+			if i == MaxRequirementsIterations {
+				// The requirements didn't stabilize after the maximum number of iterations.
+				return CompositionResult{}, errors.Errorf(errFmtFunctionMaxIterations, fn.Step, MaxRequirementsIterations)
+			}
+
+			// TODO(negz): Generate a content-addressable tag for this request.
+			// Perhaps using https://github.com/cerbos/protoc-gen-go-hashpb ?
+			rsp, err = c.pipeline.RunFunction(ctx, fn.FunctionRef.Name, req)
+			if err != nil {
+				return CompositionResult{}, errors.Wrapf(err, errFmtRunPipelineStep, fn.Step)
+			}
+
+			if c.composite.ExtraResourcesFetcher == nil {
+				// If we don't have an extra resources getter, we don't need to
+				// iterate to satisfy the requirements.
+				break
+			}
+
+			newRequirements := rsp.GetRequirements()
+			if reflect.DeepEqual(newRequirements, requirements) {
+				// The requirements stabilized, the function is done.
+				break
+			}
+
+			// Store the requirements for the next iteration.
+			requirements = newRequirements
+
+			// Cleanup the extra resources from the previous iteration to store the new ones
+			req.ExtraResources = make(map[string]*v1beta1.Resources)
+
+			// Fetch the requested resources and add them to the desired state.
+			for name, selector := range newRequirements.GetExtraResources() {
+				resources, err := c.composite.ExtraResourcesFetcher.Fetch(ctx, selector)
+				if err != nil {
+					return CompositionResult{}, errors.Wrapf(err, "fetching resources for %s", name)
+				}
+
+				// Resources would be nil in case of not found resources.
+				req.ExtraResources[name] = resources
+			}
+
+			// Pass down the updated context across iterations.
+			req.Context = rsp.GetContext()
 		}
 
 		// Pass the desired state returned by this Function to the next one.
@@ -279,19 +361,19 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 
 		// Results of fatal severity stop the Composition process. Other results
 		// are accumulated to be emitted as events by the Reconciler.
-		for _, rs := range rsp.Results {
-			switch rs.Severity {
+		for _, rs := range rsp.GetResults() {
+			switch rs.GetSeverity() {
 			case v1beta1.Severity_SEVERITY_FATAL:
-				return CompositionResult{}, errors.Errorf(errFmtFatalResult, fn.Step, rs.Message)
+				return CompositionResult{}, errors.Errorf(errFmtFatalResult, fn.Step, rs.GetMessage())
 			case v1beta1.Severity_SEVERITY_WARNING:
-				events = append(events, event.Warning(reasonCompose, errors.Errorf("Pipeline step %q: %s", fn.Step, rs.Message)))
+				events = append(events, event.Warning(reasonCompose, errors.Errorf("Pipeline step %q: %s", fn.Step, rs.GetMessage())))
 			case v1beta1.Severity_SEVERITY_NORMAL:
-				events = append(events, event.Normal(reasonCompose, fmt.Sprintf("Pipeline step %q: %s", fn.Step, rs.Message)))
+				events = append(events, event.Normal(reasonCompose, fmt.Sprintf("Pipeline step %q: %s", fn.Step, rs.GetMessage())))
 			case v1beta1.Severity_SEVERITY_UNSPECIFIED:
 				// We could hit this case if a Function was built against a newer
 				// protobuf than this build of Crossplane, and the new protobuf
 				// introduced a severity that we don't know about.
-				events = append(events, event.Warning(reasonCompose, errors.Errorf("Pipeline step %q returned a result of unknown severity (assuming warning): %s", fn.Step, rs.Message)))
+				events = append(events, event.Warning(reasonCompose, errors.Errorf("Pipeline step %q returned a result of unknown severity (assuming warning): %s", fn.Step, rs.GetMessage())))
 			}
 		}
 	}
@@ -337,7 +419,7 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 		desired[ResourceName(name)] = ComposedResourceState{
 			Resource:          cd,
 			ConnectionDetails: dr.GetConnectionDetails(),
-			Ready:             dr.Ready == v1beta1.Ready_READY_TRUE,
+			Ready:             dr.GetReady() == v1beta1.Ready_READY_TRUE,
 		}
 	}
 
@@ -381,13 +463,17 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 	v := xr.GetAPIVersion()
 	k := xr.GetKind()
 	n := xr.GetName()
+	u := xr.GetUID()
 	if err := FromStruct(xr, d.GetComposite().GetResource()); err != nil {
 		return CompositionResult{}, errors.Wrap(err, errUnmarshalDesiredXRStatus)
 	}
 	xr.SetAPIVersion(v)
 	xr.SetKind(k)
 	xr.SetName(n)
+	xr.SetUID(u)
 
+	// NOTE(phisco): Here we are fine using a hardcoded field owner as there is
+	// no risk of conflict between different XRs.
 	if err := c.client.Status().Patch(ctx, xr, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerXR)); err != nil {
 		return CompositionResult{}, errors.Wrap(err, errApplyXRStatus)
 	}
@@ -405,7 +491,10 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 		// Specifically it will merge rather than replace owner references (e.g.
 		// for Usages), and will fail if we try to add a controller reference to
 		// a resource that already has a different one.
-		if err := c.client.Patch(ctx, cd.Resource, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerComposed)); err != nil {
+		// NOTE(phisco): We need to set a field owner unique for each XR here,
+		// this prevents multiple XRs composing the same resource to be
+		// continuously alternated as controllers.
+		if err := c.client.Patch(ctx, cd.Resource, client.Apply, client.ForceOwnership, client.FieldOwner(ComposedFieldOwnerName(xr))); err != nil {
 			return CompositionResult{}, errors.Wrapf(err, errFmtApplyCD, name)
 		}
 
@@ -413,6 +502,91 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 	}
 
 	return CompositionResult{ConnectionDetails: d.GetComposite().GetConnectionDetails(), Composed: resources, Events: events}, nil
+}
+
+// ComposedFieldOwnerName generates a unique field owner name
+// for a given Crossplane composite resource (XR). This uniqueness is crucial to
+// prevent multiple XRs, which compose the same resource, from continuously
+// alternating as controllers.
+//
+// The function generates a deterministic hash based on the XR's name and
+// GroupKind (GK), ensuring consistency even during system restores. The hash
+// does not include the XR's UID (as it's not deterministic), namespace (XRs
+// don't have one), or version (to allow version changes without needing to
+// update the field owner name).
+//
+// We decided to include the GK in the hash to prevent transferring ownership of
+// composed resources across XRs with whole new GK, as that should not be
+// supported without manual intervention.
+//
+// Given that field owner names are limited to 128 characters, the function
+// truncates the hash to 32 characters. A longer hash was deemed unnecessary.
+func ComposedFieldOwnerName(xr *composite.Unstructured) string {
+	h := sha256.New()
+	_, _ = h.Write([]byte(xr.GetName() + xr.GroupVersionKind().GroupKind().String()))
+	return fmt.Sprintf("%s/%x", FieldOwnerComposedPrefix, h.Sum(nil))
+}
+
+// ExistingExtraResourcesFetcher fetches extra resources requested by
+// functions using the provided client.Reader.
+type ExistingExtraResourcesFetcher struct {
+	client client.Reader
+}
+
+// NewExistingExtraResourcesFetcher returns a new ExistingExtraResourcesFetcher.
+func NewExistingExtraResourcesFetcher(c client.Reader) *ExistingExtraResourcesFetcher {
+	return &ExistingExtraResourcesFetcher{client: c}
+}
+
+// Fetch fetches resources requested by functions using the provided client.Reader.
+func (e *ExistingExtraResourcesFetcher) Fetch(ctx context.Context, rs *v1beta1.ResourceSelector) (*v1beta1.Resources, error) {
+	if rs == nil {
+		return nil, errors.New(errNilResourceSelector)
+	}
+	switch match := rs.GetMatch().(type) {
+	case *v1beta1.ResourceSelector_MatchName:
+		// Fetch a single resource.
+		r := &kunstructured.Unstructured{}
+		r.SetAPIVersion(rs.GetApiVersion())
+		r.SetKind(rs.GetKind())
+		nn := types.NamespacedName{Name: rs.GetMatchName()}
+		err := e.client.Get(ctx, nn, r)
+		if kerrors.IsNotFound(err) {
+			// The resource doesn't exist. We'll return nil, which the Functions
+			// know means that the resource was not found.
+			return nil, nil
+		}
+		if err != nil {
+			return nil, errors.Wrap(err, errGetExtraResourceByName)
+		}
+		o, err := AsStruct(r)
+		if err != nil {
+			return nil, errors.Wrap(err, errExtraResourceAsStruct)
+		}
+		return &v1beta1.Resources{Items: []*v1beta1.Resource{{Resource: o}}}, nil
+	case *v1beta1.ResourceSelector_MatchLabels:
+		// Fetch a list of resources.
+		list := &kunstructured.UnstructuredList{}
+		list.SetAPIVersion(rs.GetApiVersion())
+		list.SetKind(rs.GetKind())
+
+		if err := e.client.List(ctx, list, client.MatchingLabels(match.MatchLabels.GetLabels())); err != nil {
+			return nil, errors.Wrap(err, errListExtraResources)
+		}
+
+		resources := make([]*v1beta1.Resource, len(list.Items))
+		for i, r := range list.Items {
+			r := r
+			o, err := AsStruct(&r)
+			if err != nil {
+				return nil, errors.Wrap(err, errExtraResourceAsStruct)
+			}
+			resources[i] = &v1beta1.Resource{Resource: o}
+		}
+
+		return &v1beta1.Resources{Items: resources}, nil
+	}
+	return nil, errors.New(errUnknownResourceSelector)
 }
 
 // An ExistingComposedResourceObserver uses an XR's resource references to load

@@ -33,13 +33,18 @@ const (
 
 	// EnableAlphaUsages enables alpha support for deletion ordering and
 	// protection with Usage resource. See the below design for more details.
-	// https://github.com/crossplane/crossplane/blob/19ea23e7c1fc16b20581755540f9f45afdf89338/design/one-pager-generic-usage-type.md
+	// https://github.com/crossplane/crossplane/blob/19ea23/design/one-pager-generic-usage-type.md
 	EnableAlphaUsages feature.Flag = "EnableAlphaUsages"
 
-	// EnableRealtimeCompositions enables alpha support for realtime
+	// EnableAlphaRealtimeCompositions enables alpha support for realtime
 	// compositions, i.e. watching MRs and reconciling compositions immediately
 	// when any MR is updated.
-	EnableRealtimeCompositions feature.Flag = "EnableRealtimeCompositions"
+	EnableAlphaRealtimeCompositions feature.Flag = "EnableAlphaRealtimeCompositions"
+
+	// EnableAlphaClaimSSA enables alpha support for using server-side apply in
+	// the claim controller. See the below issue for more details:
+	// https://github.com/crossplane/crossplane/issues/4581
+	EnableAlphaClaimSSA feature.Flag = "EnableAlphaClaimSSA"
 )
 
 // Beta Feature Flags
@@ -49,10 +54,15 @@ const (
 	// https://github.com/crossplane/crossplane/blob/863ff6/design/design-doc-composition-functions.md
 	EnableBetaCompositionFunctions feature.Flag = "EnableBetaCompositionFunctions"
 
+	// EnableBetaCompositionFunctionsExtraResources enables extra resources support for
+	// composition functions. See the below design for more details.
+	// https://github.com/crossplane/crossplane/blob/863ff6/design/design-doc-composition-functions.md
+	EnableBetaCompositionFunctionsExtraResources feature.Flag = "EnableBetaCompositionFunctionsExtraResources"
+
 	// EnableBetaCompositionWebhookSchemaValidation enables alpha support for
 	// composition webhook schema validation. See the below design for more
 	// details.
-	// https://github.com/crossplane/crossplane/blob/f32496bed53a393c8239376fd8266ddf2ef84d61/design/design-doc-composition-validating-webhook.md
+	// https://github.com/crossplane/crossplane/blob/f32496/design/design-doc-composition-validating-webhook.md
 	EnableBetaCompositionWebhookSchemaValidation feature.Flag = "EnableBetaCompositionWebhookSchemaValidation"
 
 	// EnableBetaDeploymentRuntimeConfigs enables beta support for deployment

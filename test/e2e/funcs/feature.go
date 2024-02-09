@@ -31,9 +31,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-containerregistry/pkg/crane"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -66,6 +63,8 @@ import (
 
 // DefaultPollInterval is the suggested poll interval for wait.For.
 const DefaultPollInterval = time.Millisecond * 500
+
+type onSuccessHandler func(o k8s.Object)
 
 // AllOf runs the supplied functions in order.
 func AllOf(fns ...features.Func) features.Func {
@@ -303,6 +302,14 @@ func CRDInitialNamesAccepted() xpv1.Condition {
 	}
 }
 
+type notFound struct{}
+
+func (nf notFound) String() string { return "NotFound" }
+
+// NotFound is a special 'want' value that indicates the supplied path should
+// not be found.
+var NotFound = notFound{}
+
 // ResourcesHaveFieldValueWithin fails a test if the supplied resources do not
 // have the supplied value at the supplied field path within the supplied
 // duration. The supplied 'want' value must cmp.Equal the actual value.
@@ -327,11 +334,20 @@ func ResourcesHaveFieldValueWithin(d time.Duration, dir, pattern, path string, w
 			count.Add(1)
 			u := asUnstructured(o)
 			got, err := fieldpath.Pave(u.Object).GetValue(path)
+			if fieldpath.IsNotFound(err) {
+				if _, ok := want.(notFound); ok {
+					return true
+				}
+			}
 			if err != nil {
 				return false
 			}
 
-			return cmp.Equal(want, got)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Logf("%s doesn't yet have desired value at field path %s: %s", identifier(u), path, diff)
+				return false
+			}
+			return true
 		}
 
 		start := time.Now()
@@ -361,12 +377,17 @@ func ResourceHasFieldValueWithin(d time.Duration, o k8s.Object, path string, wan
 		match := func(o k8s.Object) bool {
 			u := asUnstructured(o)
 			got, err := fieldpath.Pave(u.Object).GetValue(path)
-			if err != nil && !fieldpath.IsNotFound(err) {
+			if fieldpath.IsNotFound(err) {
+				if _, ok := want.(notFound); ok {
+					return true
+				}
+			}
+			if err != nil {
 				return false
 			}
 
 			if diff := cmp.Diff(want, got); diff != "" {
-				t.Logf("value doesn't match with diff %s", diff)
+				t.Logf("%s doesn't yet have desired value at field path %s: %s", identifier(u), path, diff)
 				return false
 			}
 			return true
@@ -392,17 +413,55 @@ func ApplyResources(manager, dir, pattern string, options ...decoder.DecodeOptio
 	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
 		dfs := os.DirFS(dir)
 
-		if err := decoder.DecodeEachFile(ctx, dfs, pattern, ApplyHandler(c.Client().Resources(), manager), options...); err != nil {
-			t.Fatal(err)
-			return ctx
-		}
-
 		files, _ := fs.Glob(dfs, pattern)
 		if len(files) == 0 {
 			t.Errorf("No resources found in %s", filepath.Join(dir, pattern))
 			return ctx
 		}
+
+		if err := decoder.DecodeEachFile(ctx, dfs, pattern, ApplyHandler(c.Client().Resources(), manager), options...); err != nil {
+			t.Fatal(err)
+			return ctx
+		}
+
 		t.Logf("Applied resources from %s (matched %d manifests)", filepath.Join(dir, pattern), len(files))
+		return ctx
+	}
+}
+
+type claimCtxKey struct{}
+
+// ApplyClaim applies the claim stored in the given folder and file
+// and stores it in the test context for later retrival if needed
+func ApplyClaim(manager, dir, cm string) features.Func {
+	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+		dfs := os.DirFS(dir)
+
+		files, _ := fs.Glob(dfs, cm)
+		if len(files) == 0 {
+			t.Errorf("No resources found in %s", filepath.Join(dir, cm))
+			return ctx
+		}
+
+		objs, err := decoder.DecodeAllFiles(ctx, dfs, cm)
+		if err != nil {
+			t.Error(err)
+			return ctx
+		}
+		if len(objs) != 1 {
+			t.Errorf("Only one claim allows in %s", filepath.Join(dir, cm))
+			return ctx
+		}
+		// TODO(negz): Only two functions seem to read this key. Either adopt it
+		// everywhere it would be relevant, or drop it.
+		f := func(o k8s.Object) {
+			ctx = context.WithValue(ctx, claimCtxKey{}, &claim.Unstructured{Unstructured: *asUnstructured(o)})
+		}
+		if err := decoder.DecodeEachFile(ctx, dfs, cm, ApplyHandler(c.Client().Resources(), manager, f)); err != nil {
+			t.Fatal(err)
+			return ctx
+		}
+		t.Logf("Applied resources from %s (matched %d manifests)", filepath.Join(dir, cm), len(files))
 		return ctx
 	}
 }
@@ -444,7 +503,7 @@ func ResourcesFailToApply(manager, dir, pattern string) features.Func {
 
 // ApplyHandler is a decoder.Handler that uses server-side apply to apply the
 // supplied object.
-func ApplyHandler(r *resources.Resources, manager string) decoder.HandlerFunc {
+func ApplyHandler(r *resources.Resources, manager string, osh ...onSuccessHandler) decoder.HandlerFunc {
 	return func(ctx context.Context, obj k8s.Object) error {
 		// TODO(negz): Use r.Patch when the below issue is solved?
 		// https://github.com/kubernetes-sigs/e2e-framework/issues/254
@@ -453,7 +512,13 @@ func ApplyHandler(r *resources.Resources, manager string) decoder.HandlerFunc {
 		// sometimes, e.g. due to conflicts with a provider managing the same
 		// fields. I'm guessing controller-runtime is setting providers as a
 		// field manager at create time even though it doesn't use SSA?
-		return r.GetControllerRuntimeClient().Patch(ctx, obj, client.Apply, client.FieldOwner(manager), client.ForceOwnership)
+		if err := r.GetControllerRuntimeClient().Patch(ctx, obj, client.Apply, client.FieldOwner(manager), client.ForceOwnership); err != nil {
+			return err
+		}
+		for _, h := range osh {
+			h(obj)
+		}
+		return nil
 	}
 }
 
@@ -475,45 +540,206 @@ func DeleteResources(dir, pattern string) features.Func {
 	}
 }
 
-// CopyImageToRegistry tries to copy the supplied image to the supplied registry within the timeout
-func CopyImageToRegistry(clusterName, ns, sName, image string, timeout time.Duration) features.Func {
+// ClaimUnderTestMustNotChangeWithin asserts that the claim available in
+// the test context does not change within the given time
+func ClaimUnderTestMustNotChangeWithin(d time.Duration) features.Func {
 	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
-		reg, err := ServiceIngressEndPoint(ctx, c, clusterName, ns, sName)
-		if err != nil {
-			t.Fatal(err)
+		cm, ok := ctx.Value(claimCtxKey{}).(*claim.Unstructured)
+		if !ok {
+			t.Fatalf("claim not available in the context")
+			return ctx
 		}
+		list := &unstructured.UnstructuredList{}
+		ucm := unstructured.Unstructured{}
+		ucm.SetNamespace(cm.GetNamespace())
+		ucm.SetName(cm.GetName())
+		ucm.SetGroupVersionKind(cm.GroupVersionKind())
+		list.Items = append(list.Items, ucm)
 
-		t.Logf("registry endpoint %s", reg)
-		srcRef, err := name.ParseReference(image)
-		if err != nil {
-			t.Fatal(err)
+		m := func(o k8s.Object) bool {
+			return o.GetGeneration() != cm.GetGeneration()
 		}
-
-		src, err := daemon.Image(srcRef)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		i := strings.Split(srcRef.String(), "/")
-		err = wait.For(func(_ context.Context) (done bool, err error) {
-			err = crane.Push(src, fmt.Sprintf("%s/%s", reg, i[1]), crane.Insecure)
-			if err != nil {
-				return false, nil //nolint:nilerr // we want to retry and to throw error
+		t.Logf("Ensuring claim %s does not change within %s", identifier(cm), d.String())
+		if err := wait.For(conditions.New(c.Client().Resources()).ResourcesMatch(list, m), wait.WithTimeout(d)); err != nil {
+			if deadlineExceed(err) {
+				t.Logf("Claim %s did not change within %s", identifier(cm), d.String())
+			} else {
+				t.Errorf("Error while observing claim %s: %v", identifier(cm), err)
 			}
-			return true, nil
-		}, wait.WithTimeout(timeout), wait.WithInterval(DefaultPollInterval))
-		if err != nil {
-			t.Fatalf("copying image `%s` to registry `%s` not successful: %v", image, reg, err)
+			return ctx
 		}
-
+		t.Errorf("Claim %s changed within %s, but it should not have", identifier(cm), d.String())
 		return ctx
 	}
 }
 
-// ComposedResourcesOfClaimHaveFieldValueWithin fails a test if the composed
+// CompositeUnderTestMustNotChangeWithin asserts that the claim available in
+// the test context does not change within the given time
+func CompositeUnderTestMustNotChangeWithin(d time.Duration) features.Func {
+	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+		cm, ok := ctx.Value(claimCtxKey{}).(*claim.Unstructured)
+		if !ok {
+			t.Fatalf("claim not available in the context")
+			return ctx
+		}
+		if err := c.Client().Resources().Get(ctx, cm.GetName(), cm.GetNamespace(), cm); err != nil {
+			t.Errorf("Error while getting claim: %v", err)
+			return ctx
+		}
+		cp := &composite.Unstructured{}
+		cp.SetName(cm.GetResourceReference().Name)
+		cp.SetGroupVersionKind(cm.GetResourceReference().GroupVersionKind())
+
+		if err := c.Client().Resources().Get(ctx, cp.GetName(), cp.GetNamespace(), cp); err != nil {
+			t.Errorf("Error while getting composite: %v", err)
+			return ctx
+		}
+		list := &unstructured.UnstructuredList{}
+		ucp := unstructured.Unstructured{}
+		ucp.SetName(cp.GetName())
+		ucp.SetGroupVersionKind(cp.GroupVersionKind())
+		list.Items = append(list.Items, ucp)
+
+		m := func(o k8s.Object) bool {
+			return o.GetResourceVersion() != cp.GetResourceVersion()
+		}
+
+		t.Logf("Ensuring composite resource %s does not change within %s", identifier(cp), d.String())
+		if err := wait.For(conditions.New(c.Client().Resources()).ResourcesMatch(list, m), wait.WithTimeout(d)); err != nil {
+			if deadlineExceed(err) {
+				t.Logf("Composite resource %s did not change within %s", identifier(cp), d.String())
+			} else {
+				t.Errorf("Error while observing composite resource %s: %v", identifier(cp), err)
+			}
+			return ctx
+		}
+		t.Errorf("Composite resource %s changed within %s, but it should not have", identifier(cp), d.String())
+		return ctx
+	}
+}
+
+// CompositeResourceMustMatchWithin assert that a composite referred by the given file
+// must be matched by the given function within the given timeout
+func CompositeResourceMustMatchWithin(d time.Duration, dir, claimFile string, match func(xr *composite.Unstructured) bool) features.Func {
+	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+		cm := &claim.Unstructured{}
+
+		if err := decoder.DecodeFile(os.DirFS(dir), claimFile, cm); err != nil {
+			t.Error(err)
+			return ctx
+		}
+
+		if err := c.Client().Resources().Get(ctx, cm.GetName(), cm.GetNamespace(), cm); err != nil {
+			t.Errorf("cannot get claim %s: %v", cm.GetName(), err)
+			return ctx
+		}
+
+		xrRef := cm.GetResourceReference()
+
+		list := &unstructured.UnstructuredList{}
+
+		uxr := unstructured.Unstructured{}
+		uxr.SetName(xrRef.Name)
+		uxr.SetNamespace(xrRef.Namespace)
+		uxr.SetGroupVersionKind(xrRef.GroupVersionKind())
+
+		list.Items = append(list.Items, uxr)
+
+		count := atomic.Int32{}
+		m := func(o k8s.Object) bool {
+			count.Add(1)
+			u := asUnstructured(o)
+			return match(&composite.Unstructured{Unstructured: *u})
+		}
+
+		if err := wait.For(conditions.New(c.Client().Resources()).ResourcesMatch(list, m), wait.WithTimeout(d)); err != nil && count.Load() > 0 {
+			t.Errorf("composite %s did not match the condition before timeout (%s): %s\n\n", identifier(&uxr), d.String(), err)
+			return ctx
+		}
+
+		if count.Load() == 0 {
+			t.Errorf("there were composite resource %s", identifier(&uxr))
+			return ctx
+		}
+
+		t.Logf("composite resource %s matched", identifier(&uxr))
+		return ctx
+	}
+}
+
+// CompositeResourceHasFieldValueWithin asserts that the XR referred to by the
+// claim in the given file has the specified value at the specified path within
+// the specified time.
+func CompositeResourceHasFieldValueWithin(d time.Duration, dir, claimFile, path string, want any) features.Func {
+	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+		cm := &claim.Unstructured{}
+
+		if err := decoder.DecodeFile(os.DirFS(dir), claimFile, cm); err != nil {
+			t.Error(err)
+			return ctx
+		}
+
+		hasResourceRef := func(o k8s.Object) bool {
+			u := asUnstructured(o)
+			got, err := fieldpath.Pave(u.Object).GetString("spec.resourceRef.name")
+			if err != nil {
+				return false
+			}
+			return got != ""
+		}
+
+		if err := wait.For(conditions.New(c.Client().Resources()).ResourceMatch(cm, hasResourceRef), wait.WithTimeout(d), wait.WithInterval(DefaultPollInterval)); err != nil {
+			t.Errorf("Claim %q does not have a resourceRef to an XR: %v", cm.GetName(), err)
+			return ctx
+		}
+
+		xrRef := cm.GetResourceReference()
+		xr := &unstructured.Unstructured{}
+		xr.SetGroupVersionKind(xrRef.GroupVersionKind())
+		xr.SetName(xrRef.Name)
+
+		count := atomic.Int32{}
+		match := func(o k8s.Object) bool {
+			count.Add(1)
+			u := asUnstructured(o)
+			got, err := fieldpath.Pave(u.Object).GetValue(path)
+			if fieldpath.IsNotFound(err) {
+				if _, ok := want.(notFound); ok {
+					return true
+				}
+			}
+			if err != nil {
+				return false
+			}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Logf("%s doesn't yet have desired value at field path %s: %s", identifier(xr), path, diff)
+				return false
+			}
+			return true
+		}
+
+		start := time.Now()
+		if err := wait.For(conditions.New(c.Client().Resources()).ResourceMatch(xr, match), wait.WithTimeout(d), wait.WithInterval(DefaultPollInterval)); err != nil {
+			y, _ := yaml.Marshal(xr)
+			t.Errorf("XR did not have desired value %q at field path %s: %v:\n\n%s\n\n", want, path, err, y)
+			return ctx
+		}
+
+		if count.Load() == 0 {
+			t.Errorf("no resources matched pattern %s", filepath.Join(dir, claimFile))
+			return ctx
+		}
+
+		t.Logf("%s has desired value %q at field path %s after %s", identifier(xr), want, path, since(start))
+		return ctx
+	}
+}
+
+// ComposedResourcesHaveFieldValueWithin fails a test if the composed
 // resources created by the claim does not have the supplied value at the
 // supplied path within the supplied duration.
-func ComposedResourcesOfClaimHaveFieldValueWithin(d time.Duration, dir, file, path string, want any, filter func(object k8s.Object) bool) features.Func {
+func ComposedResourcesHaveFieldValueWithin(d time.Duration, dir, file, path string, want any, filter func(object k8s.Object) bool) features.Func { //nolint:gocyclo // Not too much over.
 	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
 		cm := &claim.Unstructured{}
 		if err := decoder.DecodeFile(os.DirFS(dir), file, cm); err != nil {
@@ -521,8 +747,17 @@ func ComposedResourcesOfClaimHaveFieldValueWithin(d time.Duration, dir, file, pa
 			return ctx
 		}
 
-		if err := c.Client().Resources().Get(ctx, cm.GetName(), cm.GetNamespace(), cm); err != nil {
-			t.Errorf("cannot get claim %s: %v", cm.GetName(), err)
+		hasResourceRef := func(o k8s.Object) bool {
+			u := asUnstructured(o)
+			got, err := fieldpath.Pave(u.Object).GetString("spec.resourceRef.name")
+			if err != nil {
+				return false
+			}
+			return got != ""
+		}
+
+		if err := wait.For(conditions.New(c.Client().Resources()).ResourceMatch(cm, hasResourceRef), wait.WithTimeout(d), wait.WithInterval(DefaultPollInterval)); err != nil {
+			t.Errorf("Claim %q does not have a resourceRef to an XR: %v", cm.GetName(), err)
 			return ctx
 		}
 
@@ -557,11 +792,20 @@ func ComposedResourcesOfClaimHaveFieldValueWithin(d time.Duration, dir, file, pa
 			count.Add(1)
 			u := asUnstructured(o)
 			got, err := fieldpath.Pave(u.Object).GetValue(path)
+			if fieldpath.IsNotFound(err) {
+				if _, ok := want.(notFound); ok {
+					return true
+				}
+			}
 			if err != nil {
 				return false
 			}
 
-			return cmp.Equal(want, got)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Logf("%s doesn't yet have desired value at field path %s: %s", identifier(u), path, diff)
+				return false
+			}
+			return true
 		}
 
 		if err := wait.For(conditions.New(c.Client().Resources()).ResourcesMatch(list, match), wait.WithTimeout(d), wait.WithInterval(DefaultPollInterval)); err != nil {
@@ -869,4 +1113,8 @@ func itemsToObjects(items []unstructured.Unstructured) []client.Object {
 
 func since(t time.Time) string {
 	return fmt.Sprintf("%.3fs", time.Since(t).Seconds())
+}
+
+func deadlineExceed(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "would exceed context deadline")
 }

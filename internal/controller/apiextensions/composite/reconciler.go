@@ -71,6 +71,7 @@ const (
 	errFetchEnvironment       = "cannot fetch environment"
 	errSelectEnvironment      = "cannot select environment"
 	errCompose                = "cannot compose resources"
+	errInvalidResources       = "some resources were invalid, check events"
 	errRenderCD               = "cannot render composed resource"
 
 	reconcilePausedMsg = "Reconciliation (including deletion) is paused via the pause annotation"
@@ -122,19 +123,6 @@ type CompositionRevisionFetcherFn func(ctx context.Context, cr resource.Composit
 
 // Fetch an appropriate Composition for the supplied Composite resource.
 func (fn CompositionRevisionFetcherFn) Fetch(ctx context.Context, cr resource.Composite) (*v1.CompositionRevision, error) {
-	return fn(ctx, cr)
-}
-
-// A CompositionUpdatePolicySelector selects a composition update policy.
-type CompositionUpdatePolicySelector interface {
-	SelectCompositionUpdatePolicy(ctx context.Context, cr resource.Composite) error
-}
-
-// A CompositionUpdatePolicySelectorFn selects a composition update policy.
-type CompositionUpdatePolicySelectorFn func(ctx context.Context, cr resource.Composite) error
-
-// SelectCompositionUpdatePolicy for the supplied composite resource.
-func (fn CompositionUpdatePolicySelectorFn) SelectCompositionUpdatePolicy(ctx context.Context, cr resource.Composite) error {
 	return fn(ctx, cr)
 }
 
@@ -293,14 +281,6 @@ func WithCompositionSelector(s CompositionSelector) ReconcilerOption {
 	}
 }
 
-// WithCompositionUpdatePolicySelector specifies how the composition update policy to be used should be
-// selected.
-func WithCompositionUpdatePolicySelector(s CompositionUpdatePolicySelector) ReconcilerOption {
-	return func(r *Reconciler) {
-		r.composite.CompositionUpdatePolicySelector = s
-	}
-}
-
 // WithEnvironmentSelector specifies how the environment to be used should be
 // selected.
 func WithEnvironmentSelector(s EnvironmentSelector) ReconcilerOption {
@@ -374,7 +354,6 @@ type environment struct {
 type compositeResource struct {
 	resource.Finalizer
 	CompositionSelector
-	CompositionUpdatePolicySelector
 	EnvironmentSelector
 	Configurator
 	managed.ConnectionPublisher
@@ -538,13 +517,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
 	}
 
-	if err := r.composite.SelectCompositionUpdatePolicy(ctx, xr); err != nil {
-		err = errors.Wrap(err, errSelectCompUpdatePolicy)
-		r.record.Event(xr, event.Warning(reasonResolve, err))
-		xr.SetConditions(xpv1.ReconcileError(err))
-		return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
-	}
-
 	orig := xr.GetCompositionReference()
 	if err := r.composite.SelectComposition(ctx, xr); err != nil {
 		err = errors.Wrap(err, errSelectComp)
@@ -614,8 +586,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
 	}
 
-	// TODO(negz): Pass this method a copy of xr, to make very clear that
-	// anything it does won't be reflected in the state of xr?
 	res, err := r.resource.Compose(ctx, xr, CompositionRequest{Revision: rev, Environment: env})
 	if err != nil {
 		log.Debug(errCompose, "error", err)
@@ -624,6 +594,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 		err = errors.Wrap(err, errCompose)
 		r.record.Event(xr, event.Warning(reasonCompose, err))
+		if kerrors.IsInvalid(err) {
+			// API Server's invalid errors may be unstable due to pointers in
+			// the string representation of invalid structs (%v), among other
+			// reasons. Setting these errors in conditions could cause the
+			// resource version to increment continuously, leading to endless
+			// reconciliation of the resource. To avoid this, we only log these
+			// errors and emit an event. The conditions' message will then just
+			// point to the event.
+			err = errors.Wrap(errors.New(errInvalidResources), errCompose)
+		}
 		xr.SetConditions(xpv1.ReconcileError(err))
 		return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
 	}

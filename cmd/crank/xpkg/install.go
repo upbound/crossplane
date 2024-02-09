@@ -62,7 +62,7 @@ type installCmd struct {
 	ManualActivation     bool          `short:"m" help:"Require the new package's first revision to be manually activated."`
 	PackagePullSecrets   []string      `placeholder:"NAME" help:"A comma-separated list of secrets the package manager should use to pull the package from the registry."`
 	RevisionHistoryLimit int64         `short:"r" placeholder:"LIMIT" help:"How many package revisions may exist before the oldest revisions are deleted."`
-	Wait                 time.Duration `short:"w" default:"0s" help:"How long to wait for the package to install before returning. The command does not wait by default."`
+	Wait                 time.Duration `short:"w" default:"0s" help:"How long to wait for the package to install before returning. The command does not wait by default. Returns an error if the timeout is exceeded."`
 }
 
 func (c *installCmd) Help() string {
@@ -87,7 +87,7 @@ Examples:
 func (c *installCmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyclo // TODO(negz): Can anything be broken out here?
 	pkgName := c.Name
 	if pkgName == "" {
-		ref, err := name.ParseReference(c.Package, name.WithDefaultRegistry(DefaultRegistry))
+		ref, err := name.ParseReference(c.Package, name.WithDefaultRegistry(xpkg.DefaultRegistry))
 		if err != nil {
 			logger.Debug(errPkgIdentifier, "error", err)
 			return errors.Wrap(err, errPkgIdentifier)
@@ -142,7 +142,7 @@ func (c *installCmd) Run(k *kong.Context, logger logging.Logger) error { //nolin
 	}
 
 	if c.RuntimeConfig != "" {
-		rpkg, ok := pkg.(v1.PackageRevisionWithRuntime)
+		rpkg, ok := pkg.(v1.PackageWithRuntime)
 		if !ok {
 			return errors.Errorf("package kind %T does not support runtime configuration", pkg)
 		}
@@ -179,7 +179,7 @@ func (c *installCmd) Run(k *kong.Context, logger logging.Logger) error { //nolin
 	if c.Wait > 0 {
 		// Poll every 2 seconds to see whether the package is ready.
 		logger.Debug("Waiting for package to be ready", "timeout", timeout)
-		wait.UntilWithContext(ctx, func(ctx context.Context) {
+		go wait.UntilWithContext(ctx, func(ctx context.Context) {
 			if err := kube.Get(ctx, client.ObjectKeyFromObject(pkg), pkg); err != nil {
 				logger.Debug("Cannot get package", "error", err)
 				return
@@ -194,6 +194,13 @@ func (c *installCmd) Run(k *kong.Context, logger logging.Logger) error { //nolin
 
 			logger.Debug("Package is not yet ready")
 		}, 2*time.Second)
+
+		<-ctx.Done()
+
+		if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
+			return errors.Wrap(err, "Package did not become ready")
+		}
+
 	}
 
 	_, err = fmt.Fprintf(k.Stdout, "%s/%s created\n", c.Kind, pkg.GetName())

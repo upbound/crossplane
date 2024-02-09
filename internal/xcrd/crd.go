@@ -82,7 +82,13 @@ func ForCompositeResource(xrd *v1.CompositeResourceDefinition) (*extv1.CustomRes
 			return nil, errors.Wrapf(err, errFmtGenCrd, "Composite Resource", xrd.Name)
 		}
 		crdv.AdditionalPrinterColumns = append(crdv.AdditionalPrinterColumns, CompositeResourcePrinterColumns()...)
-		for k, v := range CompositeResourceSpecProps() {
+		props := CompositeResourceSpecProps()
+		if xrd.Spec.DefaultCompositionUpdatePolicy != nil {
+			cup := props["compositionUpdatePolicy"]
+			cup.Default = &extv1.JSON{Raw: []byte(fmt.Sprintf("\"%s\"", *xrd.Spec.DefaultCompositionUpdatePolicy))}
+			props["compositionUpdatePolicy"] = cup
+		}
+		for k, v := range props {
 			crdv.Schema.OpenAPIV3Schema.Properties["spec"].Properties[k] = v
 		}
 		crd.Spec.Versions[i] = *crdv
@@ -183,7 +189,7 @@ func genCrdVersion(vr v1.CompositeResourceDefinitionVersion, maxNameLength int64
 	cSpec := crdv.Schema.OpenAPIV3Schema.Properties["spec"]
 	cSpec.Required = append(cSpec.Required, xSpec.Required...)
 	cSpec.XValidations = append(cSpec.XValidations, xSpec.XValidations...)
-
+	cSpec.OneOf = append(cSpec.OneOf, xSpec.OneOf...)
 	cSpec.Description = xSpec.Description
 	for k, v := range xSpec.Properties {
 		cSpec.Properties[k] = v
@@ -195,6 +201,7 @@ func genCrdVersion(vr v1.CompositeResourceDefinitionVersion, maxNameLength int64
 	cStatus.Required = xStatus.Required
 	cStatus.XValidations = xStatus.XValidations
 	cStatus.Description = xStatus.Description
+	cStatus.OneOf = xStatus.OneOf
 	for k, v := range xStatus.Properties {
 		cStatus.Properties[k] = v
 	}

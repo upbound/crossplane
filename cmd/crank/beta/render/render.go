@@ -19,13 +19,21 @@ package render
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
+	"sort"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/structpb"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
@@ -61,6 +69,7 @@ type Inputs struct {
 	Composition       *apiextensionsv1.Composition
 	Functions         []pkgv1beta1.Function
 	ObservedResources []composed.Unstructured
+	ExtraResources    []unstructured.Unstructured
 	Context           map[string][]byte
 
 	// TODO(negz): Allow supplying observed XR and composed resource connection
@@ -72,18 +81,15 @@ type Outputs struct {
 	CompositeResource *ucomposite.Unstructured
 	ComposedResources []composed.Unstructured
 	Results           []unstructured.Unstructured
+	Context           *unstructured.Unstructured
 
 	// TODO(negz): Allow returning desired XR connection details. Maybe as a
 	// Secret? Should we honor writeConnectionSecretToRef? What if secret stores
 	// are in use?
-
-	// TODO(negz): Allow returning desired XR readiness? Or perhaps just set the
-	// ready status condition on the XR if all supplied observed resources
-	// appear ready?
 }
 
-// Render the desired XR and composed resources given the supplied inputs.
-func Render(ctx context.Context, in Inputs) (Outputs, error) { //nolint:gocyclo // TODO(negz): Should we refactor to break this up a bit?
+// Render the desired XR and composed resources, sorted by resource name, given the supplied inputs.
+func Render(ctx context.Context, logger logging.Logger, in Inputs) (Outputs, error) { //nolint:gocyclo // TODO(negz): Should we refactor to break this up a bit?
 	// Run our Functions.
 	conns := map[string]*grpc.ClientConn{}
 	for _, fn := range in.Functions {
@@ -91,11 +97,15 @@ func Render(ctx context.Context, in Inputs) (Outputs, error) { //nolint:gocyclo 
 		if err != nil {
 			return Outputs{}, errors.Wrapf(err, "cannot get runtime for Function %q", fn.GetName())
 		}
-		rctx, err := runtime.Start(ctx)
+		rctx, err := runtime.Start(ctx, logger)
 		if err != nil {
 			return Outputs{}, errors.Wrapf(err, "cannot start Function %q", fn.GetName())
 		}
-		defer rctx.Stop(ctx) //nolint:errcheck // Not sure what to do with this error. Log it to stderr?
+		defer func() {
+			if err := rctx.Stop(ctx); err != nil {
+				logger.Debug("Error stopping function runtime", "function", fn.GetName(), "error", err)
+			}
+		}()
 
 		conn, err := grpc.DialContext(ctx, rctx.Target,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -149,6 +159,14 @@ func Render(ctx context.Context, in Inputs) (Outputs, error) { //nolint:gocyclo 
 	// the desired state returned by the last, and each Function may produce
 	// results.
 	for _, fn := range in.Composition.Spec.Pipeline {
+		conn, ok := conns[fn.FunctionRef.Name]
+		if !ok {
+			return Outputs{}, errors.Errorf("unknown Function %q, referenced by pipeline step %q - does it exist in your Functions file?", fn.FunctionRef.Name, fn.Step)
+		}
+
+		fClient := fnv1beta1.NewFunctionRunnerServiceClient(conn)
+
+		// The request to send to the function, will be updated at each iteration if needed.
 		req := &fnv1beta1.RunFunctionRequest{Observed: o, Desired: d, Context: fctx}
 
 		if fn.Input != nil {
@@ -159,14 +177,47 @@ func Render(ctx context.Context, in Inputs) (Outputs, error) { //nolint:gocyclo 
 			req.Input = in
 		}
 
-		conn, ok := conns[fn.FunctionRef.Name]
-		if !ok {
-			return Outputs{}, errors.Errorf("unknown Function %q, referenced by pipeline step %q - does it exist in your Functions file?", fn.FunctionRef.Name, fn.Step)
-		}
+		// Used to store the requirements returned at the previous iteration.
+		var requirements *fnv1beta1.Requirements
+		// Used to store the response of the function at the previous iteration.
+		var rsp *fnv1beta1.RunFunctionResponse
 
-		rsp, err := fnv1beta1.NewFunctionRunnerServiceClient(conn).RunFunction(ctx, req)
-		if err != nil {
-			return Outputs{}, errors.Wrapf(err, "cannot run pipeline step %q", fn.Step)
+		for i := int64(0); i <= composite.MaxRequirementsIterations; i++ {
+			if i == composite.MaxRequirementsIterations {
+				// The requirements didn't stabilize after the maximum number of iterations.
+				return Outputs{}, errors.Errorf("requirements didn't stabilize after the maximum number of iterations (%d)", composite.MaxRequirementsIterations)
+			}
+
+			rsp, err = fClient.RunFunction(ctx, req)
+			if err != nil {
+				return Outputs{}, errors.Wrapf(err, "cannot run pipeline step %q", fn.Step)
+			}
+
+			newRequirements := rsp.GetRequirements()
+			if reflect.DeepEqual(newRequirements, requirements) {
+				// The requirements are stable, the function is done.
+				break
+			}
+
+			// Store the requirements for the next iteration.
+			requirements = newRequirements
+
+			// Cleanup the extra resources from the previous iteration to store the new ones
+			req.ExtraResources = make(map[string]*fnv1beta1.Resources)
+
+			// Fetch the requested resources and add them to the desired state.
+			for name, selector := range newRequirements.GetExtraResources() {
+				newExtraResources, err := filterExtraResources(in.ExtraResources, selector)
+				if err != nil {
+					return Outputs{}, errors.Wrapf(err, "cannot filter extra resources for pipeline step %q", fn.Step)
+				}
+
+				// Resources would be nil in case of not found resources.
+				req.ExtraResources[name] = newExtraResources
+			}
+
+			// Pass down the updated context across iterations.
+			req.Context = rsp.GetContext()
 		}
 
 		// Pass the desired state returned by this Function to the next one.
@@ -177,10 +228,10 @@ func Render(ctx context.Context, in Inputs) (Outputs, error) { //nolint:gocyclo 
 		fctx = rsp.GetContext()
 
 		// Results of fatal severity stop the Composition process.
-		for _, rs := range rsp.Results {
-			switch rs.Severity { //nolint:exhaustive // We intentionally have a broad default case.
+		for _, rs := range rsp.GetResults() {
+			switch rs.GetSeverity() { //nolint:exhaustive // We intentionally have a broad default case.
 			case fnv1beta1.Severity_SEVERITY_FATAL:
-				return Outputs{}, errors.Errorf("pipeline step %q returned a fatal result: %s", fn.Step, rs.Message)
+				return Outputs{}, errors.Errorf("pipeline step %q returned a fatal result: %s", fn.Step, rs.GetMessage())
 			default:
 				results = append(results, unstructured.Unstructured{Object: map[string]any{
 					"apiVersion": "render.crossplane.io/v1beta1",
@@ -194,7 +245,12 @@ func Render(ctx context.Context, in Inputs) (Outputs, error) { //nolint:gocyclo 
 	}
 
 	desired := make([]composed.Unstructured, 0, len(d.GetResources()))
+	var unready []string
 	for name, dr := range d.GetResources() {
+		if dr.GetReady() != fnv1beta1.Ready_READY_TRUE {
+			unready = append(unready, name)
+		}
+
 		cd := composed.New()
 		if err := composite.FromStruct(cd, dr.GetResource()); err != nil {
 			return Outputs{}, errors.Wrapf(err, "cannot unmarshal desired composed resource %q", name)
@@ -216,6 +272,11 @@ func Render(ctx context.Context, in Inputs) (Outputs, error) { //nolint:gocyclo 
 		desired = append(desired, *cd)
 	}
 
+	// Sort the resource names to ensure a deterministic ordering of returned composed resources.
+	sort.Slice(desired, func(i, j int) bool {
+		return desired[i].GetAnnotations()[AnnotationKeyCompositionResourceName] < desired[j].GetAnnotations()[AnnotationKeyCompositionResourceName]
+	})
+
 	xr := ucomposite.New()
 	if err := composite.FromStruct(xr, d.GetComposite().GetResource()); err != nil {
 		return Outputs{}, errors.Wrap(err, "cannot render desired composite resource")
@@ -226,8 +287,24 @@ func Render(ctx context.Context, in Inputs) (Outputs, error) { //nolint:gocyclo 
 	xr.SetAPIVersion(in.CompositeResource.GetAPIVersion())
 	xr.SetKind(in.CompositeResource.GetKind())
 	xr.SetName(in.CompositeResource.GetName())
+	xrCond := xpv1.Available()
+	if len(unready) > 0 {
+		xrCond = xpv1.Creating().WithMessage(fmt.Sprintf("Unready resources: %s", resource.StableNAndSomeMore(resource.DefaultFirstN, unready)))
+	}
+	// lastTransitionTime would just be noise, but we can't drop it as it's a
+	// required field and null is not allowed, so we set a random time.
+	xrCond.LastTransitionTime = metav1.NewTime(time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC))
+	xr.SetConditions(xrCond)
 
-	return Outputs{CompositeResource: xr, ComposedResources: desired, Results: results}, nil
+	out := Outputs{CompositeResource: xr, ComposedResources: desired, Results: results}
+	if fctx != nil {
+		out.Context = &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "render.crossplane.io/v1beta1",
+			"kind":       "Context",
+			"fields":     fctx.GetFields(),
+		}}
+	}
+	return out, nil
 }
 
 // SetComposedResourceMetadata sets standard, required composed resource
@@ -250,4 +327,39 @@ func SetComposedResourceMetadata(cd resource.Object, xr resource.Composite, name
 
 	or := meta.AsController(meta.TypedReferenceTo(xr, xr.GetObjectKind().GroupVersionKind()))
 	return errors.Wrapf(meta.AddControllerReference(cd, or), "cannot set composite resource %q as controller ref of composed resource", xr.GetName())
+}
+
+func filterExtraResources(ers []unstructured.Unstructured, selector *fnv1beta1.ResourceSelector) (*fnv1beta1.Resources, error) { //nolint:gocyclo // There is not much to simplify here.
+	if len(ers) == 0 || selector == nil {
+		return nil, nil
+	}
+	out := &fnv1beta1.Resources{}
+	for _, er := range ers {
+		er := er
+		if selector.GetApiVersion() != er.GetAPIVersion() {
+			continue
+		}
+		if selector.GetKind() != er.GetKind() {
+			continue
+		}
+		if selector.GetMatchName() == er.GetName() {
+			o, err := composite.AsStruct(&er)
+			if err != nil {
+				return nil, errors.Wrapf(err, "cannot marshal extra resource %q", er.GetName())
+			}
+			out.Items = []*fnv1beta1.Resource{{Resource: o}}
+			return out, nil
+		}
+		if selector.GetMatchLabels() != nil {
+			if labels.SelectorFromSet(selector.GetMatchLabels().GetLabels()).Matches(labels.Set(er.GetLabels())) {
+				o, err := composite.AsStruct(&er)
+				if err != nil {
+					return nil, errors.Wrapf(err, "cannot marshal extra resource %q", er.GetName())
+				}
+				out.Items = append(out.GetItems(), &fnv1beta1.Resource{Resource: o})
+			}
+		}
+	}
+
+	return out, nil
 }
