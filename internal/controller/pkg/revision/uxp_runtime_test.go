@@ -49,7 +49,7 @@ func TestUXPRuntimeManifestBuilderDeployment(t *testing.T) {
 					providerIdentity: true,
 				},
 				serviceAccountName: providerRevisionName,
-				overrides:          providerDeploymentOverrides(&pkgmetav1.Provider{ObjectMeta: metav1.ObjectMeta{Name: providerMetaName}}, providerRevision),
+				overrides:          providerDeploymentOverrides(&pkgmetav1.Provider{ObjectMeta: metav1.ObjectMeta{Name: providerMetaName}}, providerRevision, providerImage),
 			},
 			want: want{
 				want: deploymentProvider(providerName, providerRevisionName, providerImage, DeploymentWithSelectors(map[string]string{
