@@ -47,6 +47,7 @@ func WellKnownTemplates() map[string]string {
 		"provider-template-upjet":  "https://github.com/upbound/upjet-provider-template",
 		"function-template-go":     "https://github.com/crossplane/function-template-go",
 		"function-template-python": "https://github.com/crossplane/function-template-python",
+		"configuration-template":   "https://github.com/crossplane/configuration-template",
 	}
 }
 
@@ -57,6 +58,7 @@ type initCmd struct {
 
 	Directory     string `short:"d" default:"." type:"path" help:"The directory to initialize. It must be empty. It will be created if it doesn't exist."`
 	RunInitScript bool   `short:"r" name:"run-init-script" help:"Runs the init.sh script if it exists without prompting"`
+	RefName       string `short:"b" name:"ref-name" help:"The branch or tag to clone from the template repository."`
 }
 
 func (c *initCmd) Help() string {
@@ -127,8 +129,9 @@ func (c *initCmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:g
 
 	fs := osfs.New(c.Directory, osfs.WithBoundOS())
 	r, err := git.Clone(memory.NewStorage(), fs, &git.CloneOptions{
-		URL:   repoURL,
-		Depth: 1,
+		URL:           repoURL,
+		Depth:         1,
+		ReferenceName: plumbing.ReferenceName(c.RefName),
 	})
 	if err != nil {
 		return errors.Wrapf(err, "failed to clone repository from %q", repoURL)
