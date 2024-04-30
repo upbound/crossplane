@@ -9,6 +9,6 @@ details.
 <!-- Named links -->
 [Upbound]: https://www.upbound.io
 [Crossplane]: https://crossplane.io
-[Universal Crossplane]: https://www.upbound.io/uxp
+[Universal Crossplane]: https://www.upbound.io/product/universal-crossplane
 [Universal Crossplane Github Repo]: https://github.com/upbound/universal-crossplane
 [documentation]: https://cloud.upbound.io/docs/uxp
