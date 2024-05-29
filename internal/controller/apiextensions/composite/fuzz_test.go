@@ -32,9 +32,7 @@ import (
 	pkgmetav1alpha1 "github.com/crossplane/crossplane/apis/pkg/meta/v1alpha1"
 )
 
-var (
-	fuzzScheme = runtime.NewScheme()
-)
+var fuzzScheme = runtime.NewScheme()
 
 func init() {
 	if err := pkgmetav1alpha1.SchemeBuilder.AddToScheme(fuzzScheme); err != nil {
@@ -48,7 +46,7 @@ func init() {
 	}
 }
 
-// Adds a type to the patch
+// Adds a type to the patch.
 func addType(p *v1.Patch, i int) {
 	chooseType := i % 5
 	switch chooseType {
@@ -66,7 +64,7 @@ func addType(p *v1.Patch, i int) {
 }
 
 func FuzzPatchApply(f *testing.F) {
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		f := fuzz.NewConsumer(data)
 
 		cp := &fake.Composite{}
@@ -88,7 +86,7 @@ func FuzzPatchApply(f *testing.F) {
 	})
 }
 
-// Adds a type to the transform
+// Adds a type to the transform.
 func addTransformType(t *v1.Transform, i int) error {
 	chooseType := i % 4
 	switch chooseType {
@@ -122,7 +120,7 @@ func addTransformType(t *v1.Transform, i int) error {
 }
 
 func FuzzTransform(f *testing.F) {
-	f.Fuzz(func(tt *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		f := fuzz.NewConsumer(data)
 
 		t := &v1.Transform{}

@@ -91,7 +91,10 @@ func (h *FunctionHooks) Pre(ctx context.Context, _ runtime.Object, pr v1.Package
 	}
 
 	// N.B.: We expect the revision to be applied by the caller
-	fRev := pr.(*v1beta1.FunctionRevision)
+	fRev, ok := pr.(*v1beta1.FunctionRevision)
+	if !ok {
+		return errors.Errorf("cannot apply function package hooks to %T", pr)
+	}
 	fRev.Status.Endpoint = fmt.Sprintf(serviceEndpointFmt, svc.Name, svc.Namespace, servicePort)
 
 	secServer := build.TLSServerSecret()
@@ -134,7 +137,7 @@ func (h *FunctionHooks) Post(ctx context.Context, pkg runtime.Object, pr v1.Pack
 	// `deploymentTemplate.spec.template.spec.serviceAccountName` in the
 	// DeploymentRuntimeConfig.
 	if sa.Name == d.Spec.Template.Spec.ServiceAccountName {
-		if err := h.client.Apply(ctx, sa); err != nil {
+		if err := applySA(ctx, h.client, sa); err != nil {
 			return errors.Wrap(err, errApplyFunctionSA)
 		}
 	}

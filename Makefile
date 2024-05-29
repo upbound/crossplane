@@ -31,9 +31,9 @@ GO_TEST_PARALLEL := $(shell echo $$(( $(NPROCS) / 2 )))
 GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/crossplane $(GO_PROJECT)/cmd/crank
 GO_TEST_PACKAGES = $(GO_PROJECT)/test/e2e
 GO_LDFLAGS += -X $(GO_PROJECT)/internal/version.version=$(shell echo $(VERSION) | sed 's/[\.,-]up.*//' )
-GO_SUBDIRS += cmd internal apis
+GO_SUBDIRS += cmd internal apis pkg
 GO111MODULE = on
-GOLANGCILINT_VERSION = 1.55.2
+GOLANGCILINT_VERSION = 1.58.2
 GO_LINT_ARGS ?= "--fix"
 
 -include build/makelib/golang.mk
@@ -41,8 +41,7 @@ GO_LINT_ARGS ?= "--fix"
 # ====================================================================================
 # Setup Kubernetes tools
 
-USE_HELM3 = true
-HELM3_VERSION = v3.14.0
+HELM_VERSION = v3.14.4
 KIND_VERSION = v0.21.0
 -include build/makelib/k8s_tools.mk
 
@@ -69,10 +68,16 @@ fallthrough: submodules
 	@echo Initial setup complete. Running make again . . .
 	@make
 
-manifests:
-	@$(WARN) Deprecated. Please run make generate instead.
-
 CRD_DIR = cluster/crds
+CRD_PATCH_DIR = cluster/crd-patches
+
+# See patch files for details.
+crds.patch: $(KUBECTL)
+	@$(INFO) patching generated CRDs
+	@mkdir -p $(WORK_DIR)/patch
+	@$(KUBECTL) patch --local --type=json -f $(CRD_DIR)/pkg.crossplane.io_deploymentruntimeconfigs.yaml --patch-file $(CRD_PATCH_DIR)/pkg.crossplane.io_deploymentruntimeconfigs.yaml -o yaml > $(WORK_DIR)/patch/pkg.crossplane.io_deploymentruntimeconfigs.yaml
+	@mv $(WORK_DIR)/patch/pkg.crossplane.io_deploymentruntimeconfigs.yaml $(CRD_DIR)/pkg.crossplane.io_deploymentruntimeconfigs.yaml
+	@$(OK) patched generated CRDs
 
 crds.clean:
 	@$(INFO) cleaning generated CRDs
@@ -85,7 +90,7 @@ generate.run: gen-kustomize-crds gen-chart-license
 gen-chart-license:
 	@cp -f LICENSE cluster/charts/crossplane/LICENSE
 
-generate.done: crds.clean
+generate.done: crds.clean crds.patch
 
 gen-kustomize-crds:
 	@$(INFO) Adding all CRDs to Kustomize file for local development
@@ -98,13 +103,6 @@ gen-kustomize-crds:
 		do echo "- $${filename#*/}" >> cluster/kustomization.yaml \
 		; done
 	@$(OK) All CRDs added to Kustomize file for local development
-
-# Generate a coverage report for cobertura applying exclusions on
-# - generated file
-cobertura:
-	@cat $(GO_TEST_OUTPUT)/coverage.txt | \
-		grep -v zz_generated.deepcopy | \
-		$(GOCOVER_COBERTURA) > $(GO_TEST_OUTPUT)/cobertura-coverage.xml
 
 e2e-tag-images:
 	@$(INFO) Tagging E2E test images
@@ -119,17 +117,25 @@ E2E_TEST_FLAGS ?=
 # https://github.com/kubernetes-sigs/e2e-framework/issues/282
 E2E_PATH = $(WORK_DIR)/e2e
 
+GOTESTSUM_VERSION ?= v1.11.0
+GOTESTSUM := $(TOOLS_HOST_DIR)/gotestsum
+
+$(GOTESTSUM):
+	@$(INFO) installing gotestsum
+	@GOBIN=$(TOOLS_HOST_DIR) $(GOHOST) install gotest.tools/gotestsum@$(GOTESTSUM_VERSION) || $(FAIL)
+	@$(OK) installed gotestsum
+
 e2e-run-tests:
 	@$(INFO) Run E2E tests
 	@mkdir -p $(E2E_PATH)
 	@ln -sf $(KIND) $(E2E_PATH)/kind
 	@ln -sf $(HELM) $(E2E_PATH)/helm
-	@PATH="$(E2E_PATH):${PATH}" $(GO_TEST_OUTPUT)/e2e $(E2E_TEST_FLAGS) || $(FAIL)
+	@PATH="$(E2E_PATH):${PATH}" $(GOTESTSUM) --format testname --junitfile $(GO_TEST_OUTPUT)/e2e-tests.xml --raw-command -- $(GO) tool test2json -t -p e2e $(GO_TEST_OUTPUT)/e2e -test.v $(E2E_TEST_FLAGS) || $(FAIL)
 	@$(OK) Run E2E tests
 
 e2e.init: build e2e-tag-images
 
-e2e.run: $(KIND) $(HELM3) e2e-run-tests
+e2e.run: $(GOTESTSUM) $(KIND) $(HELM3) e2e-run-tests
 
 # Update the submodules, such as the common build scripts.
 submodules:
@@ -161,14 +167,13 @@ run: go.build
 	@# To see other arguments that can be provided, run the command with --help instead
 	$(GO_OUT_DIR)/$(PROJECT_NAME) core start --debug
 
-.PHONY: manifests cobertura submodules fallthrough test-integration run install-crds uninstall-crds gen-kustomize-crds e2e-tests-compile e2e.test.images
+.PHONY: manifests submodules fallthrough test-integration run install-crds uninstall-crds gen-kustomize-crds e2e-tests-compile e2e.test.images
 
 # ====================================================================================
 # Special Targets
 
 define CROSSPLANE_MAKE_HELP
 Crossplane Targets:
-    cobertura          Generate a coverage report for cobertura applying exclusions on generated files.
     submodules         Update the submodules, such as the common build scripts.
     run                Run crossplane locally, out-of-cluster. Useful for development.
 

@@ -22,8 +22,11 @@ tolerations: []
 # -- Add `affinities` to the Crossplane pod deployment.
 affinity: {}
 
-# -- Enable `hostNetwork` for the Crossplane deployment. Caution: enabling `hostNetwork` grants the Crossplane Pod access to the host network namespace.
+# -- Enable `hostNetwork` for the Crossplane deployment. Caution: enabling `hostNetwork` grants the Crossplane Pod access to the host network namespace. Consider setting `dnsPolicy` to `ClusterFirstWithHostNet`.
 hostNetwork: false
+
+# -- Specify the `dnsPolicy` to be used by the Crossplane pod.
+dnsPolicy: ""
 
 # -- Add custom `labels` to the Crossplane pod deployment.
 customLabels: {}
@@ -48,14 +51,22 @@ configuration:
   # -- A list of Configuration packages to install.
   packages: []
 
+function:
+  # -- A list of Function packages to install
+  packages: []
+
 # -- The imagePullSecret names to add to the Crossplane ServiceAccount.
-imagePullSecrets: {}
+imagePullSecrets: []
 
 registryCaBundleConfig:
   # -- The ConfigMap name containing a custom CA bundle to enable fetching packages from registries with unknown or untrusted certificates.
   name: ""
   # -- The ConfigMap key containing a custom CA bundle to enable fetching packages from registries with unknown or untrusted certificates.
   key: ""
+
+service:
+  # -- Configure annotations on the service object. Only enabled when webhooks.enabled = true
+  customAnnotations: {}
 
 webhooks:
   # -- Enable webhooks for Crossplane and installed Provider packages.
@@ -85,9 +96,9 @@ priorityClassName: ""
 resourcesCrossplane:
   limits:
     # -- CPU resource limits for the Crossplane pod.
-    cpu: 100m
+    cpu: 500m
     # -- Memory resource limits for the Crossplane pod.
-    memory: 512Mi
+    memory: 1024Mi
   requests:
     # -- CPU resource requests for the Crossplane pod.
     cpu: 100m

@@ -19,6 +19,7 @@ package upbound
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -81,7 +82,7 @@ func withConfig(config string) Option {
 	return func(ctx *Context) {
 		// establish fs and create config.json
 		fs := afero.NewMemMapFs()
-		fs.MkdirAll(filepath.Dir("/.up/"), 0755)
+		fs.MkdirAll(filepath.Dir("/.up/"), 0o755)
 		f, _ := fs.Create("/.up/config.json")
 
 		f.WriteString(config)
@@ -274,6 +275,11 @@ func TestNewFromFlags(t *testing.T) {
 	}
 
 	for name, tc := range cases {
+		// Unset common UP env vars used by the test to avoid unexpect behaviours describe in #5721
+		os.Unsetenv("UP_ACCOUNT")
+		os.Unsetenv("UP_DOMAIN")
+		os.Unsetenv("UP_PROFILE")
+		os.Unsetenv("UP_INSECURE_SKIP_TLS_VERIFY")
 		t.Run(name, func(t *testing.T) {
 			flags := Flags{}
 			parser, _ := kong.New(&flags)

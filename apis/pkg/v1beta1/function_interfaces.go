@@ -34,7 +34,7 @@ func (f *Function) SetConditions(c ...xpv1.Condition) {
 	f.Status.SetConditions(c...)
 }
 
-// CleanConditions removes all conditions
+// CleanConditions removes all conditions.
 func (f *Function) CleanConditions() {
 	f.Status.Conditions = []xpv1.Condition{}
 }
@@ -177,7 +177,7 @@ func (r *FunctionRevision) SetConditions(c ...xpv1.Condition) {
 	r.Status.SetConditions(c...)
 }
 
-// CleanConditions removes all conditions
+// CleanConditions removes all conditions.
 func (r *FunctionRevision) CleanConditions() {
 	r.Status.Conditions = []xpv1.Condition{}
 }
@@ -328,7 +328,6 @@ func (r *FunctionRevision) SetCommonLabels(l map[string]string) {
 func (p *FunctionRevisionList) GetRevisions() []v1.PackageRevision {
 	prs := make([]v1.PackageRevision, len(p.Items))
 	for i, r := range p.Items {
-		r := r // Pin range variable so we can take its address.
 		prs[i] = &r
 	}
 	return prs

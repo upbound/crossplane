@@ -45,7 +45,6 @@ const (
 // Transform is a unit of process whose input is transformed into an output with
 // the supplied configuration.
 type Transform struct {
-
 	// Type of the transform to be run.
 	// +kubebuilder:validation:Enum=map;match;math;string;convert
 	Type TransformType `json:"type"`
@@ -74,8 +73,6 @@ type Transform struct {
 }
 
 // Validate this Transform is valid.
-//
-//nolint:gocyclo // This is a long but simple/same-y switch.
 func (t *Transform) Validate() *field.Error {
 	switch t.Type {
 	case TransformTypeMath:
@@ -360,7 +357,6 @@ const (
 
 // A StringTransform returns a string given the supplied input.
 type StringTransform struct {
-
 	// Type of the string transform to be run.
 	// +optional
 	// +kubebuilder:validation:Enum=Format;Convert;TrimPrefix;TrimSuffix;Regexp;Join
@@ -378,8 +374,9 @@ type StringTransform struct {
 	// `ToJson` converts any input value into its raw JSON representation.
 	// `ToSha1`, `ToSha256` and `ToSha512` generate a hash value based on the input
 	// converted to JSON.
+	// `ToAdler32` generate a addler32 hash based on the input string.
 	// +optional
-	// +kubebuilder:validation:Enum=ToUpper;ToLower;ToBase64;FromBase64;ToJson;ToSha1;ToSha256;ToSha512
+	// +kubebuilder:validation:Enum=ToUpper;ToLower;ToBase64;FromBase64;ToJson;ToSha1;ToSha256;ToSha512;ToAdler32
 	Convert *StringConversionType `json:"convert,omitempty"`
 
 	// Trim the prefix or suffix from the input
@@ -396,8 +393,6 @@ type StringTransform struct {
 }
 
 // Validate checks this StringTransform is valid.
-//
-//nolint:gocyclo // just a switch
 func (s *StringTransform) Validate() *field.Error {
 	switch s.Type {
 	case StringTransformTypeFormat, "":
@@ -430,7 +425,6 @@ func (s *StringTransform) Validate() *field.Error {
 		return field.Invalid(field.NewPath("type"), s.Type, "unknown string transform type")
 	}
 	return nil
-
 }
 
 // A StringTransformRegexp extracts a match from the input using a regular

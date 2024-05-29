@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -43,6 +44,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
 
 	"github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1beta1"
+	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	"github.com/crossplane/crossplane/internal/names"
 )
 
@@ -68,6 +70,7 @@ const (
 	errFmtApplyCD                    = "cannot apply composed resource %q"
 	errFmtFetchCDConnectionDetails   = "cannot fetch connection details for composed resource %q (a %s named %s)"
 	errFmtUnmarshalPipelineStepInput = "cannot unmarshal input for Composition pipeline step %q"
+	errFmtGetCredentialsFromSecret   = "cannot get Composition pipeline step %q credential %q from Secret"
 	errFmtRunPipelineStep            = "cannot run Composition pipeline step %q"
 	errFmtDeleteCD                   = "cannot delete composed resource %q (a %s named %s)"
 	errFmtUnmarshalDesiredCD         = "cannot unmarshal desired composed resource %q from RunFunctionResponse"
@@ -120,6 +123,7 @@ type xr struct {
 	ComposedResourceObserver
 	ComposedResourceGarbageCollector
 	ExtraResourcesFetcher
+	ManagedFieldsUpgrader
 }
 
 // A FunctionRunner runs a single Composition Function.
@@ -178,6 +182,14 @@ func (fn ComposedResourceGarbageCollectorFn) GarbageCollectComposedResources(ctx
 	return fn(ctx, owner, observed, desired)
 }
 
+// A ManagedFieldsUpgrader upgrades an objects managed fields from client-side
+// apply to server-side apply. This is necessary when an object was previously
+// managed using client-side apply, but should now be managed using server-side
+// apply. See https://github.com/kubernetes/kubernetes/issues/99003 for details.
+type ManagedFieldsUpgrader interface {
+	Upgrade(ctx context.Context, obj client.Object) error
+}
+
 // A FunctionComposerOption is used to configure a FunctionComposer.
 type FunctionComposerOption func(*FunctionComposer)
 
@@ -213,13 +225,18 @@ func WithComposedResourceGarbageCollector(d ComposedResourceGarbageCollector) Fu
 	}
 }
 
+// WithManagedFieldsUpgrader configures how the FunctionComposer should upgrade
+// composed resources managed fields from client-side apply to
+// server-side apply.
+func WithManagedFieldsUpgrader(u ManagedFieldsUpgrader) FunctionComposerOption {
+	return func(p *FunctionComposer) {
+		p.composite.ManagedFieldsUpgrader = u
+	}
+}
+
 // NewFunctionComposer returns a new Composer that supports composing resources using
 // both Patch and Transform (P&T) logic and a pipeline of Composition Functions.
 func NewFunctionComposer(kube client.Client, r FunctionRunner, o ...FunctionComposerOption) *FunctionComposer {
-	// TODO(negz): Can we avoid double-wrapping if the supplied client is
-	// already wrapped? Or just do away with unstructured.NewClient completely?
-	kube = unstructured.NewClient(kube)
-
 	f := NewSecretConnectionDetailsFetcher(kube)
 
 	c := &FunctionComposer{
@@ -230,6 +247,7 @@ func NewFunctionComposer(kube client.Client, r FunctionRunner, o ...FunctionComp
 			ComposedResourceObserver:         NewExistingComposedResourceObserver(kube, f),
 			ComposedResourceGarbageCollector: NewDeletingComposedResourceGarbageCollector(kube),
 			NameGenerator:                    names.NewNameGenerator(kube),
+			ManagedFieldsUpgrader:            NewPatchingManagedFieldsUpgrader(kube),
 		},
 
 		pipeline: r,
@@ -243,7 +261,7 @@ func NewFunctionComposer(kube client.Client, r FunctionRunner, o ...FunctionComp
 }
 
 // Compose resources using the Functions pipeline.
-func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructured, req CompositionRequest) (CompositionResult, error) { //nolint:gocyclo // We probably don't want any further abstraction for the sake of reduced complexity.
+func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructured, req CompositionRequest) (CompositionResult, error) { //nolint:gocognit // We probably don't want any further abstraction for the sake of reduced complexity.
 	// Observe our existing composed resources. We need to do this before we
 	// render any P&T templates, so that we can make sure we use the same
 	// composed resource names (as in, metadata.name) every time. We know what
@@ -299,6 +317,26 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 				return CompositionResult{}, errors.Wrapf(err, errFmtUnmarshalPipelineStepInput, fn.Step)
 			}
 			req.Input = in
+		}
+
+		req.Credentials = map[string]*v1beta1.Credentials{}
+		for _, cs := range fn.Credentials {
+			// For now we only support loading credentials from secrets.
+			if cs.Source != v1.FunctionCredentialsSourceSecret || cs.SecretRef == nil {
+				continue
+			}
+
+			s := &corev1.Secret{}
+			if err := c.client.Get(ctx, client.ObjectKey{Namespace: cs.SecretRef.Namespace, Name: cs.SecretRef.Name}, s); err != nil {
+				return CompositionResult{}, errors.Wrapf(err, errFmtGetCredentialsFromSecret, fn.Step, cs.Name)
+			}
+			req.Credentials[cs.Name] = &v1beta1.Credentials{
+				Source: &v1beta1.Credentials_CredentialData{
+					CredentialData: &v1beta1.CredentialData{
+						Data: s.Data,
+					},
+				},
+			}
 		}
 
 		// Used to store the requirements returned at the previous iteration.
@@ -454,6 +492,59 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 		return CompositionResult{}, errors.Wrap(err, errApplyXRRefs)
 	}
 
+	// TODO: Remove this call to Upgrade once no supported version of
+	// Crossplane have native P&T available. We only need to upgrade field managers if the
+	// native PTComposer might have applied the composed resources before, using the
+	// default client-side apply field manager "crossplane",
+	// but now migrated to use Composition functions, which uses server-side apply instead.
+	// Without this managedFields upgrade, the composed resources ends up having shared ownership
+	// of fields and field removals won't sync properly.
+	for _, cd := range observed {
+		if err := c.composite.ManagedFieldsUpgrader.Upgrade(ctx, cd.Resource); err != nil {
+			return CompositionResult{}, errors.Wrap(err, "cannot upgrade composed resource's managed fields from client-side to server-side apply")
+		}
+	}
+
+	// Produce our array of resources to return to the Reconciler. The
+	// Reconciler uses this array to determine whether the XR is ready.
+	resources := make([]ComposedResource, 0, len(desired))
+
+	// We apply all of our desired resources before we observe them in the loop
+	// below. This ensures that issues observing and processing one composed
+	// resource won't block the application of another.
+	for name, cd := range desired {
+		// We don't need any crossplane-runtime resource.Applicator style apply
+		// options here because server-side apply takes care of everything.
+		// Specifically it will merge rather than replace owner references (e.g.
+		// for Usages), and will fail if we try to add a controller reference to
+		// a resource that already has a different one.
+		// NOTE(phisco): We need to set a field owner unique for each XR here,
+		// this prevents multiple XRs composing the same resource to be
+		// continuously alternated as controllers.
+		if err := c.client.Patch(ctx, cd.Resource, client.Apply, client.ForceOwnership, client.FieldOwner(ComposedFieldOwnerName(xr))); err != nil {
+			if kerrors.IsInvalid(err) {
+				// We tried applying an invalid resource, we can't tell whether
+				// this means the resource will never be valid or it will if we
+				// run again the composition after some other resource is
+				// created or updated successfully. So, we emit a warning event
+				// and move on.
+				// We mark the resource as not synced, so that once we get to
+				// decide the XR's Synced condition, we can set it to false if
+				// any of the resources didn't sync successfully.
+				events = append(events, event.Warning(reasonCompose, errors.Wrapf(err, errFmtApplyCD, name)))
+				// NOTE(phisco): here we behave differently w.r.t. the native
+				// p&t composer, as we respect the readiness reported by
+				// functions, while there we defaulted to also set ready false
+				// in case of apply errors.
+				resources = append(resources, ComposedResource{ResourceName: name, Ready: cd.Ready, Synced: false})
+				continue
+			}
+			return CompositionResult{}, errors.Wrapf(err, errFmtApplyCD, name)
+		}
+
+		resources = append(resources, ComposedResource{ResourceName: name, Ready: cd.Ready, Synced: true})
+	}
+
 	// Our goal here is to patch our XR's status using server-side apply. We
 	// want the resulting, patched object loaded into uxr. We need to pass in
 	// only our "fully specified intent" - i.e. only the fields that we actually
@@ -475,30 +566,10 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 	// NOTE(phisco): Here we are fine using a hardcoded field owner as there is
 	// no risk of conflict between different XRs.
 	if err := c.client.Status().Patch(ctx, xr, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerXR)); err != nil {
+		// Note(phisco): here we are fine with this error being terminal, as
+		// there is no other resource to apply that might eventually resolve
+		// this issue.
 		return CompositionResult{}, errors.Wrap(err, errApplyXRStatus)
-	}
-
-	// Produce our array of resources to return to the Reconciler. The
-	// Reconciler uses this array to determine whether the XR is ready.
-	resources := make([]ComposedResource, 0, len(desired))
-
-	// We apply all of our desired resources before we observe them in the loop
-	// below. This ensures that issues observing and processing one composed
-	// resource won't block the application of another.
-	for name, cd := range desired {
-		// We don't need any crossplane-runtime resource.Applicator style apply
-		// options here because server-side apply takes care of everything.
-		// Specifically it will merge rather than replace owner references (e.g.
-		// for Usages), and will fail if we try to add a controller reference to
-		// a resource that already has a different one.
-		// NOTE(phisco): We need to set a field owner unique for each XR here,
-		// this prevents multiple XRs composing the same resource to be
-		// continuously alternated as controllers.
-		if err := c.client.Patch(ctx, cd.Resource, client.Apply, client.ForceOwnership, client.FieldOwner(ComposedFieldOwnerName(xr))); err != nil {
-			return CompositionResult{}, errors.Wrapf(err, errFmtApplyCD, name)
-		}
-
-		resources = append(resources, ComposedResource{ResourceName: name, Ready: cd.Ready})
 	}
 
 	return CompositionResult{ConnectionDetails: d.GetComposite().GetConnectionDetails(), Composed: resources, Events: events}, nil
@@ -576,7 +647,6 @@ func (e *ExistingExtraResourcesFetcher) Fetch(ctx context.Context, rs *v1beta1.R
 
 		resources := make([]*v1beta1.Resource, len(list.Items))
 		for i, r := range list.Items {
-			r := r
 			o, err := AsStruct(&r)
 			if err != nil {
 				return nil, errors.Wrap(err, errExtraResourceAsStruct)
@@ -782,4 +852,86 @@ func UpdateResourceRefs(xr resource.ComposedResourcesReferencer, desired Compose
 	})
 
 	xr.SetResourceReferences(refs)
+}
+
+// A PatchingManagedFieldsUpgrader uses a JSON patch to upgrade an object's
+// managed fields from client-side to server-side apply. The upgrade is a no-op
+// if the object does not need upgrading.
+type PatchingManagedFieldsUpgrader struct {
+	client client.Writer
+}
+
+// NewPatchingManagedFieldsUpgrader returns a ManagedFieldsUpgrader that uses a
+// JSON patch to upgrade and object's managed fields from client-side to
+// server-side apply.
+func NewPatchingManagedFieldsUpgrader(w client.Writer) *PatchingManagedFieldsUpgrader {
+	return &PatchingManagedFieldsUpgrader{client: w}
+}
+
+// Upgrade the supplied composed object's field managers from client-side to server-side
+// apply.
+//
+// This is a multi-step process.
+//
+// Step 1: All fields are owned by manager 'crossplane' operation 'Update'. This
+// represents all fields set by the XR controller up to this point.
+//
+// Step 2: Upgrade is called for the first time. We clear all field managers.
+//
+// Step 3: The XR controller server-side applies its fully specified intent
+// as field manager with prefix 'apiextensions.crossplane.io/composed/'. This becomes the
+// manager of all the fields that are part of the XR controller's fully
+// specified intent. All existing fields the XR controller didn't specify
+// become owned by a special manager - 'before-first-apply', operation 'Update'.
+//
+// Step 4: Upgrade is called for the second time. It deletes the
+// 'before-first-apply' field manager entry. Only the XR composed field manager
+// remains.
+func (u *PatchingManagedFieldsUpgrader) Upgrade(ctx context.Context, obj client.Object) error {
+	// The composed resource doesn't exist, nothing to upgrade.
+	if !meta.WasCreated(obj) {
+		return nil
+	}
+
+	foundSSA := false
+	foundBFA := false
+	idxBFA := -1
+
+	for i, e := range obj.GetManagedFields() {
+		if strings.HasPrefix(e.Manager, FieldOwnerComposedPrefix) {
+			foundSSA = true
+		}
+		if e.Manager == "before-first-apply" {
+			foundBFA = true
+			idxBFA = i
+		}
+	}
+
+	switch {
+	// If our SSA field manager exists and the before-first-apply field manager
+	// doesn't, we've already done the upgrade. Don't do it again.
+	case foundSSA && !foundBFA:
+		return nil
+
+	// We found our SSA field manager but also before-first-apply. It should now
+	// be safe to delete before-first-apply.
+	case foundSSA && foundBFA:
+		p := []byte(fmt.Sprintf(`[
+			{"op": "remove", "path": "/metadata/managedFields/%d"},
+			{"op": "replace", "path": "/metadata/resourceVersion", "value": "%s"}
+		]`, idxBFA, obj.GetResourceVersion()))
+		return errors.Wrap(resource.IgnoreNotFound(u.client.Patch(ctx, obj, client.RawPatch(types.JSONPatchType, p))), "cannot remove before-first-apply from field managers")
+
+	// We didn't find our SSA field manager. This means we haven't started the
+	// upgrade. The first thing we want to do is clear all managed fields.
+	// After we do this we'll let our SSA field manager apply the fields it
+	// cares about. The result will be that our SSA field manager shares
+	// ownership with a new manager named 'before-first-apply'.
+	default:
+		p := []byte(fmt.Sprintf(`[
+			{"op": "replace", "path": "/metadata/managedFields", "value": [{}]},
+			{"op": "replace", "path": "/metadata/resourceVersion", "value": "%s"}
+		]`, obj.GetResourceVersion()))
+		return errors.Wrap(resource.IgnoreNotFound(u.client.Patch(ctx, obj, client.RawPatch(types.JSONPatchType, p))), "cannot clear field managers")
+	}
 }

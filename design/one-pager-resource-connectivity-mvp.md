@@ -253,7 +253,7 @@ spec:
 By comparison, a direct translation of the [GKE cluster external resource]'s
 writable API object fields to a Kubernetes YAML specification would be as
 follows. Note that the GKE API contains several deprecated fields, all of which
-are superceded by others (e.g. `nodeConfig` is superceded by `nodePools`). The
+are superseded by others (e.g. `nodeConfig` is superseded by `nodePools`). The
 below translation omits these deprecated fields.
 
 ```yaml
@@ -688,7 +688,7 @@ resources need to be created beforehand:
   and associating it with a set of subnets.
 
 In addition, `RDSInstance`s also need the following resources, so that they are
-accessible by the the worker nodes:
+accessible by the worker nodes:
 
 * `DBSubnetGroup`: represents a group of `Subnet`s from different availability
   zones,
@@ -964,7 +964,7 @@ ensure connectivity.
 
 We will need to wait until *after* the Wordspress stack is installed to create
 the VNet Rule on the MySQL DB due to the fact that the database will not exist
-until the the stack references our `SQLServerClass` with a claim.
+until the stack references our `SQLServerClass` with a claim.
 
 #### A Model for Deploying Wordpress
 

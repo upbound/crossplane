@@ -21,6 +21,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 	"sigs.k8s.io/e2e-framework/third_party/helm"
 
@@ -54,12 +55,10 @@ func init() {
 // extensions (i.e. Composition, XRDs, etc).
 const LabelAreaAPIExtensions = "apiextensions"
 
-var (
-	nopList = composed.NewList(composed.FromReferenceToList(corev1.ObjectReference{
-		APIVersion: "nop.crossplane.io/v1alpha1",
-		Kind:       "NopResource",
-	}))
-)
+var nopList = composed.NewList(composed.FromReferenceToList(corev1.ObjectReference{
+	APIVersion: "nop.crossplane.io/v1alpha1",
+	Kind:       "NopResource",
+}))
 
 // TestCompositionMinimal tests Crossplane's Composition functionality,
 // checking that a claim using a very minimal Composition (with no patches,
@@ -99,6 +98,50 @@ func TestCompositionMinimal(t *testing.T) {
 			WithTeardown("DeleteClaim", funcs.AllOf(
 				funcs.DeleteResources(manifests, "claim.yaml"),
 				funcs.ResourcesDeletedWithin(2*time.Minute, manifests, "claim.yaml"),
+			)).
+			WithTeardown("DeletePrerequisites", funcs.ResourcesDeletedAfterListedAreGone(3*time.Minute, manifests, "setup/*.yaml", nopList)).
+			Feature(),
+	)
+}
+
+// TestCompositionInvalidComposed tests Crossplane's Composition functionality,
+// checking that although a composed resource is invalid, i.e. it didn't apply
+// successfully.
+func TestCompositionInvalidComposed(t *testing.T) {
+	manifests := "test/e2e/manifests/apiextensions/composition/invalid-composed"
+
+	xrList := composed.NewList(composed.FromReferenceToList(corev1.ObjectReference{
+		APIVersion: "example.org/v1alpha1",
+		Kind:       "XParent",
+	}), composed.FromReferenceToList(corev1.ObjectReference{
+		APIVersion: "example.org/v1alpha1",
+		Kind:       "XChild",
+	}))
+
+	environment.Test(t,
+		features.New(t.Name()).
+			WithLabel(LabelArea, LabelAreaAPIExtensions).
+			WithLabel(LabelSize, LabelSizeSmall).
+			WithLabel(config.LabelTestSuite, config.TestSuiteDefault).
+			WithSetup("PrerequisitesAreCreated", funcs.AllOf(
+				funcs.ApplyResources(FieldManager, manifests, "setup/*.yaml"),
+				funcs.ResourcesCreatedWithin(30*time.Second, manifests, "setup/*.yaml"),
+				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "setup/definition.yaml", apiextensionsv1.WatchingComposite()),
+				funcs.ResourcesHaveConditionWithin(2*time.Minute, manifests, "setup/provider.yaml", pkgv1.Healthy(), pkgv1.Active()),
+			)).
+			Assess("CreateXR", funcs.AllOf(
+				funcs.ApplyResources(FieldManager, manifests, "xr.yaml"),
+				funcs.InBackground(funcs.LogResources(xrList)),
+				funcs.InBackground(funcs.LogResources(nopList)),
+				funcs.ResourcesCreatedWithin(30*time.Second, manifests, "xr.yaml"),
+			)).
+			Assess("XRStillAnnotated", funcs.AllOf(
+				// Check the XR it has metadata.annotations set
+				funcs.ResourcesHaveFieldValueWithin(1*time.Minute, manifests, "xr.yaml", "metadata.annotations[exampleVal]", "foo"),
+			)).
+			WithTeardown("DeleteXR", funcs.AllOf(
+				funcs.DeleteResources(manifests, "xr.yaml"),
+				funcs.ResourcesDeletedWithin(2*time.Minute, manifests, "xr.yaml"),
 			)).
 			WithTeardown("DeletePrerequisites", funcs.ResourcesDeletedAfterListedAreGone(3*time.Minute, manifests, "setup/*.yaml", nopList)).
 			Feature(),
@@ -300,7 +343,10 @@ func TestPropagateFieldsRemovalToXRAfterUpgrade(t *testing.T) {
 				funcs.AsFeaturesFunc(environment.HelmUpgradeCrossplaneToSuite(SuiteSSAClaims)),
 				funcs.ReadyToTestWithin(1*time.Minute, namespace),
 			)).
-			Assess("UpdateClaim", funcs.ApplyClaim(FieldManager, manifests, "claim-update.yaml")).
+			Assess("UpdateClaim", funcs.AllOf(
+				funcs.ApplyClaim(FieldManager, manifests, "claim-update.yaml"),
+				funcs.ClaimUnderTestMustNotChangeWithin(1*time.Minute),
+			)).
 			Assess("FieldsRemovalPropagatedToXR", funcs.AllOf(
 				// Updates and deletes are propagated claim -> XR.
 				funcs.CompositeResourceHasFieldValueWithin(1*time.Minute, manifests, "claim.yaml", "metadata.labels[foo]", "1"),
@@ -318,6 +364,55 @@ func TestPropagateFieldsRemovalToXRAfterUpgrade(t *testing.T) {
 				// Status is propagated XR -> claim.
 				funcs.ResourcesHaveFieldValueWithin(5*time.Minute, manifests, "claim-update.yaml", "status.coolerField", "I'm cool!"),
 				funcs.CompositeUnderTestMustNotChangeWithin(1*time.Minute),
+			)).
+			WithTeardown("DeleteClaim", funcs.AllOf(
+				funcs.DeleteResources(manifests, "claim.yaml"),
+				funcs.ResourcesDeletedWithin(2*time.Minute, manifests, "claim.yaml"),
+			)).
+			WithTeardown("DeletePrerequisites", funcs.ResourcesDeletedAfterListedAreGone(3*time.Minute, manifests, "setup/*.yaml", nopList)).
+			WithTeardown("DisableSSAClaims", funcs.AllOf(
+				funcs.AsFeaturesFunc(environment.HelmUpgradeCrossplaneToBase()), // Disable our feature flag.
+				funcs.ReadyToTestWithin(1*time.Minute, namespace),
+			)).
+			Feature(),
+	)
+}
+
+// TestPropagateFieldsRemovalToComposed tests Crossplane's end-to-end SSA syncing
+// functionality of clear propagation of fields from claim->XR->MR, when existing
+// composition and resources are migrated from native P-and-T to functions pipeline mode.
+func TestPropagateFieldsRemovalToComposed(t *testing.T) {
+	manifests := "test/e2e/manifests/apiextensions/composition/propagate-field-removals"
+	environment.Test(t,
+		features.New(t.Name()).
+			WithLabel(LabelArea, LabelAreaAPIExtensions).
+			WithLabel(LabelSize, LabelSizeSmall).
+			WithLabel(LabelModifyCrossplaneInstallation, LabelModifyCrossplaneInstallationTrue).
+			WithLabel(config.LabelTestSuite, SuiteSSAClaims).
+			WithSetup("EnableSSAClaims", funcs.AllOf(
+				funcs.AsFeaturesFunc(environment.HelmUpgradeCrossplaneToSuite(SuiteSSAClaims)),
+				funcs.ReadyToTestWithin(1*time.Minute, namespace),
+			)).
+			WithSetup("PrerequisitesAreCreated", funcs.AllOf(
+				funcs.ApplyResources(FieldManager, manifests, "setup/*.yaml"),
+				funcs.ResourcesCreatedWithin(30*time.Second, manifests, "setup/*.yaml"),
+				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "setup/definition.yaml", apiextensionsv1.WatchingComposite()),
+			)).
+			Assess("CreateClaim", funcs.AllOf(
+				funcs.ApplyClaim(FieldManager, manifests, "claim.yaml"),
+				funcs.ResourcesCreatedWithin(30*time.Second, manifests, "claim.yaml"),
+				funcs.ResourcesHaveConditionWithin(5*time.Minute, manifests, "claim.yaml", xpv1.Available()),
+			)).
+			Assess("ConvertToPipelineCompositionUpgrade", funcs.ApplyResources(FieldManager, manifests, "composition-xfn.yaml")).
+			Assess("UpdateClaim", funcs.ApplyClaim(FieldManager, manifests, "claim-update.yaml")).
+			Assess("FieldsRemovalPropagatedToMR", funcs.AllOf(
+				// field removals and updates are propagated claim -> XR -> MR, after converting composition from native to pipeline mode
+				funcs.ComposedResourcesHaveFieldValueWithin(1*time.Minute, manifests, "claim.yaml",
+					"spec.forProvider.fields.tags[newtag]", funcs.NotFound,
+					funcs.FilterByGK(schema.GroupKind{Group: "nop.crossplane.io", Kind: "NopResource"})),
+				funcs.ComposedResourcesHaveFieldValueWithin(1*time.Minute, manifests, "claim.yaml",
+					"spec.forProvider.fields.tags[tag]", "v1",
+					funcs.FilterByGK(schema.GroupKind{Group: "nop.crossplane.io", Kind: "NopResource"})),
 			)).
 			WithTeardown("DeleteClaim", funcs.AllOf(
 				funcs.DeleteResources(manifests, "claim.yaml"),

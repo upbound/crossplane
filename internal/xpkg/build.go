@@ -124,7 +124,7 @@ func WithBase(img v1.Image) BuildOpt {
 }
 
 // Build compiles a Crossplane package from an on-disk package.
-func (b *Builder) Build(ctx context.Context, opts ...BuildOpt) (v1.Image, runtime.Object, error) { //nolint:gocyclo // TODO(lsviben) consider refactoring
+func (b *Builder) Build(ctx context.Context, opts ...BuildOpt) (v1.Image, runtime.Object, error) {
 	bOpts := &buildOpts{
 		base: empty.Image,
 	}
@@ -252,7 +252,7 @@ func encode(pkg parser.Lintable) (*bytes.Buffer, error) {
 
 // SkipContains supplies a FilterFn that skips paths that contain the give pattern.
 func SkipContains(pattern string) parser.FilterFn {
-	return func(path string, info os.FileInfo) (bool, error) {
+	return func(path string, _ os.FileInfo) (bool, error) {
 		return strings.Contains(path, pattern), nil
 	}
 }

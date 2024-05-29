@@ -59,6 +59,10 @@ spec:
           - --configuration
           - "{{ $arg }}"
           {{- end }}
+          {{- range $arg := .Values.function.packages }}
+          - --function
+          - "{{ $arg }}"
+          {{- end }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           name: {{ .Chart.Name }}-init
           resources:
@@ -238,4 +242,7 @@ spec:
       {{- end }}
       {{- if .Values.affinity }}
       affinity: {{ toYaml .Values.affinity | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dnsPolicy }}
+      dnsPolicy: {{ . }}
       {{- end }}

@@ -47,6 +47,7 @@ func WellKnownTemplates() map[string]string {
 		"provider-template-upjet":  "https://github.com/upbound/upjet-provider-template",
 		"function-template-go":     "https://github.com/crossplane/function-template-go",
 		"function-template-python": "https://github.com/crossplane/function-template-python",
+		"configuration-template":   "https://github.com/crossplane/configuration-template",
 	}
 }
 
@@ -55,8 +56,9 @@ type initCmd struct {
 	Name     string `arg:"" help:"The name of the new package to initialize."`
 	Template string `arg:"" help:"The template name or URL to use to initialize the new package."`
 
-	Directory     string `short:"d" default:"." type:"path" help:"The directory to initialize. It must be empty. It will be created if it doesn't exist."`
-	RunInitScript bool   `short:"r" name:"run-init-script" help:"Runs the init.sh script if it exists without prompting"`
+	Directory     string `default:"."                                                     help:"The directory to initialize. It must be empty. It will be created if it doesn't exist." short:"d" type:"path"`
+	RunInitScript bool   `help:"Runs the init.sh script if it exists without prompting"   name:"run-init-script"                                                                        short:"r"`
+	RefName       string `help:"The branch or tag to clone from the template repository." name:"ref-name"                                                                               short:"b"`
 }
 
 func (c *initCmd) Help() string {
@@ -100,13 +102,13 @@ Examples:
 	return fmt.Sprintf(tpl, b.String())
 }
 
-func (c *initCmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyclo // file check switch and print error check make it over the top
+func (c *initCmd) Run(k *kong.Context, logger logging.Logger) error {
 	f, err := os.Stat(c.Directory)
 	switch {
 	case err == nil && !f.IsDir():
 		return errors.Errorf("path %s is not a directory", c.Directory)
 	case os.IsNotExist(err):
-		if err := os.MkdirAll(c.Directory, 0750); err != nil {
+		if err := os.MkdirAll(c.Directory, 0o750); err != nil {
 			return errors.Wrapf(err, "failed to create directory %s", c.Directory)
 		}
 		logger.Debug("Created directory", "path", c.Directory)
@@ -127,8 +129,9 @@ func (c *initCmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:g
 
 	fs := osfs.New(c.Directory, osfs.WithBoundOS())
 	r, err := git.Clone(memory.NewStorage(), fs, &git.CloneOptions{
-		URL:   repoURL,
-		Depth: 1,
+		URL:           repoURL,
+		Depth:         1,
+		ReferenceName: plumbing.ReferenceName(c.RefName),
 	})
 	if err != nil {
 		return errors.Wrapf(err, "failed to clone repository from %q", repoURL)
@@ -225,6 +228,7 @@ func printFile(w io.Writer, path string) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to open file %s", path)
 	}
+	defer f.Close() //nolint:errcheck // It's safe to ignore the error because it only do read operation.
 	content, err := io.ReadAll(f)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read file %s", path)
