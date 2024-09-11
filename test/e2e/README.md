@@ -17,72 +17,41 @@ All Crossplane features must be exercised by these tests, as well as unit tests.
 
 ## Running Tests
 
-Run `make e2e` to run E2E tests.
+Run `earthly -P +e2e` to run E2E tests.
 
-This compiles Crossplane and an E2E test binary. It then runs the test binary.
-Use the `E2E_TEST_FLAGS` to pass flags to the test binary. For example:
+This compiles Crossplane and an E2E test binary. It then uses the test binary to
+run the base test suite. Use the `FLAGS` to pass flags to the test binary. For
+example:
 
 ```shell
-# Most tests use t.Log to explain what they're doing. Use the -test.v flag
-# (equivalent to go test -v) to see detailed test progress and logs.
-E2E_TEST_FLAGS="-test.v" make e2e
-
 # Some functions that setup the test environment (e.g. kind) use the klog logger
 # The -v flag controls the verbosity of klog. Use -v=4 for debug logging.
-E2E_TEST_FLAGS="-test.v -v=4" make e2e
+earthly -P +e2e --FLAGS="-v=4"
 
 # To run only a specific test, match it by regular expression
-E2E_TEST_FLAGS="-test.run ^TestConfiguration" make e2e
+earthly -P +e2e --FLAGS="-test.run ^TestConfiguration"
 
 # To test features with certain labels, use the labels flag
-E2E_TEST_FLAGS="-labels area=apiextensions" make e2e
+earthly -P +e2e --FLAGS="-labels area=apiextensions"
 
 # To test a specific feature, use the feature flag
-E2E_TEST_FLAGS="-feature=ConfigurationWithDependency" make e2e
+earthly -P +e2e --FLAGS="-feature=ConfigurationWithDependency"
 
 # Stop immediately on first test failure, and leave the kind cluster to debug.
-E2E_TEST_FLAGS="-test.v -test.failfast -destroy-kind-cluster=false"
+earthly -i -P +e2e --FLAGS="-test.failfast -destroy-kind-cluster=false"
 
-# Use an existing Kubernetes cluster. Note that the E2E tests can't deploy your
-# local build of Crossplane in this scenario, so you'll have to do it yourself.
-E2E_TEST_FLAGS="-create-kind-cluster=false -destroy-kind-cluster=false -kubeconfig=$HOME/.kube/config" make e2e
-
-# Run the CrossplaneUpgrade feature, against an existing kind cluster named
-# "kind" (or creating it if it doesn't exist), # without installing Crossplane
-# first, as the feature expects the cluster to be empty, but still loading the
-# images to it. Setting the tests to fail fast and not destroying the cluster
-# afterward in order to allow debugging it.
-E2E_TEST_FLAGS="-test.v -v 4 -test.failfast \
-  -destroy-kind-cluster=false \
-  -kind-cluster-name=kind \
-  -preinstall-crossplane=false \
-  -feature=CrossplaneUpgrade" make e2e
-
-# Run all the tests not installing or upgrading Crossplane against the currently
-# selected cluster where Crossplane has already been installed.
-E2E_TEST_FLAGS="-test.v -v 4 -test.failfast \
-  -kubeconfig=$HOME/.kube/config \
-  -skip-labels modify-crossplane-installation=true \
-  -create-kind-cluster=false \
-  -preinstall-crossplane=false" make go.build e2e-run-tests
-
-# Run the composition-webhook-schema-validation suite of tests, which will
-# result in all tests marked as "test-suite=base" or
-# "test-suite=composition-webhook-schema-validation" being run against a kind
-# cluster with Crossplane installed with composition-webhook-schema-validation
-# enabled
-E2E_TEST_FLAGS="-test.v -v 4 -test.failfast \
-  -test-suite=composition-webhook-schema-validation " make e2e
+# Run a specific test suite.
+earthly -P +e2e --FLAGS="-test.v -test-suite=composition-webhook-schema-validation"
 ```
 
 ## Test Parallelism
 
-`make e2e` runs all defined E2E tests serially. Tests do not run in parallel.
-This is because all tests run against the same API server and Crossplane has a
-lot of cluster-scoped state - XRDs, Providers, Compositions, etc. It's easier
-and less error-prone to write tests when you don't have to worry about one test
-potentially conflicting with another - for example by installing the same
-provider another test would install.
+`earthly -P +e2e` runs all defined E2E tests serially. Tests do not run in
+parallel. This is because all tests run against the same API server and
+Crossplane has a lot of cluster-scoped state - XRDs, Providers, Compositions,
+etc. It's easier and less error-prone to write tests when you don't have to
+worry about one test potentially conflicting with another - for example by
+installing the same provider another test would install.
 
 The [CI GitHub workflow] uses a matrix strategy to run multiple jobs in parallel, 
 each running a test suite, see the dedicated section for more details.
@@ -146,7 +115,7 @@ We try to follow this pattern when adding a new test:
    `github.com/crossplane/crossplane/test/e2e/funcs`, or add new ones there if
    needed.
 1. Prefer using the Fluent APIs to define features
-   (`features.New(...).WithSetup(...).Assess(...).WithTeardown(...).Feature()`).
+   (`features.NewWithDescription(...).WithSetup(...).AssessWithDescription(...).WithTeardown(...).Feature()`).
    1. `features.Table` should be used only to define multiple self-contained
       assessments to be run sequentially, but without assuming any ordering among
       them, similarly to the usual table driven style we adopt for unit testing.
@@ -155,8 +124,8 @@ We try to follow this pattern when adding a new test:
    a feature, as they allow to provide a description.
 1. Use short but explicative `CamelCase` sentences as descriptions for
    everything used to define the name of tests/subtests, e.g.
-   `features.New("CrossplaneUpgrade", ...)` `WithSetup("InstallProviderNop",
-   ...)`, `Assess("ProviderNopIsInstalled", ...)`,
+   `features.NewWithDescription("CrossplaneUpgrade", ...)` `WithSetup("InstallProviderNop",
+   ...)`, `AssessWithDescription("ProviderNopIsInstalled", ...)`,
    `WithTeardown("UninstallProviderNop", ...)`.
 1. Use the `Setup` and `Teardown` phases to define respectively actions that are
    not strictly part of the feature being tested, but are needed to make it
@@ -194,29 +163,31 @@ Here an example of a test following the above guidelines:
 ```go
 package e2e
 
+import "sigs.k8s.io/e2e-framework/pkg/features"
+
 // ...
 
 // TestSomeFeature ...
 func TestSomeFeature(t *testing.T) {
-	manifests := "test/e2e/manifests/pkg/some-area/some-feature"
-	namespace := "some-namespace"
-	// ... other variables or constants ...
+   manifests := "test/e2e/manifests/pkg/some-area/some-feature"
+   namespace := "some-namespace"
+   // ... other variables or constants ...
 
-	environment.Test(t,
-		features.New(t.Name()).
-			WithLabel(LabelArea, ...).
-			WithLabel(LabelSize, ...).
-			WithLabel(config.LabelTestSuite, config.TestSuiteDefault).
-			// ...
-			WithSetup("ReadyPrerequisites", ... ).
-			// ... other setup steps ...
-			Assess("DoSomething", ... ).
-			Assess("SomethingElseIsInSomeState", ... ).
-			// ... other assess steps ...
-			WithTeardown("DeleteCreatedResources", ...).
-			// ... other teardown steps ...
-			Feature(),
-	)
+   environment.Test(t,
+      features.NewWithDescription(t.Name(), ...).
+         WithLabel(LabelArea, ...).
+         WithLabel(LabelSize, ...).
+         WithLabel(config.LabelTestSuite, config.TestSuiteDefault).
+         // ...
+         WithSetup("ReadyPrerequisites", ...).
+         // ... other setup steps ...
+         AssessWithDescription("DoSomething", ...).
+         AssessWithDescription("SomethingElseIsInSomeState", ...).
+         // ... other assess steps ...
+         WithTeardown("DeleteCreatedResources", ...).
+         // ... other teardown steps ...
+         Feature(),
+   )
 }
 
 // ...

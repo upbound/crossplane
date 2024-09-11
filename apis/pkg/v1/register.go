@@ -30,13 +30,13 @@ const (
 )
 
 var (
-	// SchemeGroupVersion is group version used to register these objects
+	// SchemeGroupVersion is group version used to register these objects.
 	SchemeGroupVersion = schema.GroupVersion{Group: Group, Version: Version}
 
-	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
+	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
 
-	// AddToScheme adds all registered types to the scheme
+	// AddToScheme adds all registered types to the scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
 )
 
@@ -72,9 +72,27 @@ var (
 	ProviderRevisionGroupVersionKind = SchemeGroupVersion.WithKind(ProviderRevisionKind)
 )
 
+// Function type metadata.
+var (
+	FunctionKind             = reflect.TypeOf(Function{}).Name()
+	FunctionGroupKind        = schema.GroupKind{Group: Group, Kind: FunctionKind}.String()
+	FunctionKindAPIVersion   = FunctionKind + "." + SchemeGroupVersion.String()
+	FunctionGroupVersionKind = SchemeGroupVersion.WithKind(FunctionKind)
+)
+
+// FunctionRevision type metadata.
+var (
+	FunctionRevisionKind             = reflect.TypeOf(FunctionRevision{}).Name()
+	FunctionRevisionGroupKind        = schema.GroupKind{Group: Group, Kind: FunctionRevisionKind}.String()
+	FunctionRevisionKindAPIVersion   = FunctionRevisionKind + "." + SchemeGroupVersion.String()
+	FunctionRevisionGroupVersionKind = SchemeGroupVersion.WithKind(FunctionRevisionKind)
+)
+
 func init() {
 	SchemeBuilder.Register(&Configuration{}, &ConfigurationList{})
 	SchemeBuilder.Register(&ConfigurationRevision{}, &ConfigurationRevisionList{})
 	SchemeBuilder.Register(&Provider{}, &ProviderList{})
 	SchemeBuilder.Register(&ProviderRevision{}, &ProviderRevisionList{})
+	SchemeBuilder.Register(&Function{}, &FunctionList{})
+	SchemeBuilder.Register(&FunctionRevision{}, &FunctionRevisionList{})
 }

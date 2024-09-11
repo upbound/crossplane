@@ -70,13 +70,14 @@ func HelmUpgrade(o ...helm.Option) env.Func {
 // returns an error the calling test is failed with t.Fatal(err).
 func AsFeaturesFunc(fn env.Func) features.Func {
 	return func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+		t.Helper()
+
 		ctx, err := fn(ctx, c)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return ctx
 	}
-
 }
 
 // HelmUninstall uninstalls a Helm chart.
@@ -104,6 +105,7 @@ func EnvFuncs(fns ...env.Func) env.Func {
 	return func(ctx context.Context, c *envconf.Config) (context.Context, error) {
 		for _, fn := range fns {
 			var err error
+			//nolint:fatcontext // We want to pass the context down the chain.
 			ctx, err = fn(ctx, c)
 			if err != nil {
 				return ctx, err
@@ -115,11 +117,11 @@ func EnvFuncs(fns ...env.Func) env.Func {
 
 // CreateKindClusterWithConfig create kind cluster of the given name according to
 // configuration referred via configFilePath.
-// The configuration is placed in test context afterward
+// The configuration is placed in test context afterward.
 func CreateKindClusterWithConfig(clusterName, configFilePath string) env.Func {
 	return EnvFuncs(
 		envfuncs.CreateClusterWithConfig(kind.NewProvider(), clusterName, configFilePath),
-		func(ctx context.Context, config *envconf.Config) (context.Context, error) {
+		func(ctx context.Context, _ *envconf.Config) (context.Context, error) {
 			b, err := os.ReadFile(filepath.Clean(configFilePath))
 			if err != nil {
 				return ctx, err

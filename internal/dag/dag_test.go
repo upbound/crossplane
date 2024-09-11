@@ -37,7 +37,6 @@ func (s *simpleNode) Neighbors() []Node {
 	nodes := make([]Node, len(s.neighbors))
 	i := 0
 	for _, r := range s.neighbors {
-		r := r // Pin range variable so we can take its address.
 		nodes[i] = &r
 		i++
 	}
@@ -58,14 +57,15 @@ func (s *simpleNode) AddNeighbors(nodes ...Node) error {
 func toNodes(n []simpleNode) []Node {
 	nodes := make([]Node, len(n))
 	for i, r := range n {
-		r := r // Pin range variable so we can take its address.
 		nodes[i] = &r
 	}
 	return nodes
 }
 
-var _ DAG = &MapDag{}
-var _ NewDAGFn = NewMapDag
+var (
+	_ DAG      = &MapDag{}
+	_ NewDAGFn = NewMapDag
+)
 
 func sortedFnNop([]simpleNode, []string) error {
 	return nil

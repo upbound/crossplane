@@ -510,6 +510,67 @@ func TestCompositionValidatePipeline(t *testing.T) {
 				},
 			},
 		},
+		"InvalidDuplicateCredentialNames": {
+			reason: "A step's credential names must be unique",
+			args: args{
+				comp: &Composition{
+					Spec: CompositionSpec{
+						Mode: ptr.To(CompositionModePipeline),
+						Pipeline: []PipelineStep{
+							{
+								Step: "duplicate-creds",
+								Credentials: []FunctionCredentials{
+									{
+										Name: "foo",
+									},
+									{
+										Name: "foo",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: want{
+				output: field.ErrorList{
+					{
+						Type:     field.ErrorTypeDuplicate,
+						Field:    "spec.pipeline[0].credentials[1].name",
+						BadValue: "foo",
+					},
+				},
+			},
+		},
+		"InvalidMissingSecretRef": {
+			reason: "A step's credential must specify a secretRef if its source is a secret",
+			args: args{
+				comp: &Composition{
+					Spec: CompositionSpec{
+						Mode: ptr.To(CompositionModePipeline),
+						Pipeline: []PipelineStep{
+							{
+								Step: "duplicate-creds",
+								Credentials: []FunctionCredentials{
+									{
+										Name:   "foo",
+										Source: FunctionCredentialsSourceSecret,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: want{
+				output: field.ErrorList{
+					{
+						Type:  field.ErrorTypeRequired,
+						Field: "spec.pipeline[0].credentials[0].secretRef",
+					},
+				},
+			},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -713,7 +774,9 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 				comp: &Composition{
 					Spec: CompositionSpec{
 						Environment: &EnvironmentConfiguration{},
-					}}},
+					},
+				},
+			},
 		},
 		"ValidNilEnvironment": {
 			reason: "Should accept a nil environment",
@@ -721,7 +784,9 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 				comp: &Composition{
 					Spec: CompositionSpec{
 						Environment: nil,
-					}}},
+					},
+				},
+			},
 		},
 		"ValidEnvironment": {
 			reason: "Should accept a valid environment",
@@ -751,7 +816,15 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 												Type:               EnvironmentSourceSelectorLabelMatcherTypeFromCompositeFieldPath,
 												Key:                "foo",
 												ValueFromFieldPath: ptr.To("spec.foo"),
-											}}}}}}}}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		"InvalidPatchEnvironment": {
 			reason: "Should reject an environment declaring an invalid patch",
@@ -770,7 +843,7 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 							Patches: []EnvironmentPatch{
 								{
 									Type: PatchTypeFromCompositeFieldPath,
-									//FromFieldPath: ptr.To("spec.foo"), // missing
+									// FromFieldPath: ptr.To("spec.foo"), // missing
 									ToFieldPath: ptr.To("metadata.annotations[\"foo\"]"),
 								},
 							},
@@ -789,7 +862,15 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 												Type:               EnvironmentSourceSelectorLabelMatcherTypeFromCompositeFieldPath,
 												Key:                "foo",
 												ValueFromFieldPath: ptr.To("spec.foo"),
-											}}}}}}}}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		"InvalidEnvironmentSourceReferenceNoName": {
 			reason: "Should reject a invalid environment, due to a missing name",
@@ -809,7 +890,7 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 								{
 									Type: EnvironmentSourceTypeReference,
 									Ref:  &EnvironmentSourceReference{
-										//Name: "foo", // missing
+										// Name: "foo", // missing
 									},
 								},
 								{
@@ -820,7 +901,15 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 												Type:               EnvironmentSourceSelectorLabelMatcherTypeFromCompositeFieldPath,
 												Key:                "foo",
 												ValueFromFieldPath: ptr.To("spec.foo"),
-											}}}}}}}}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		"InvalidEnvironmentSourceSelectorNoKey": {
 			reason: "Should reject a invalid environment due to a missing key in a selector",
@@ -849,9 +938,17 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 										MatchLabels: []EnvironmentSourceSelectorLabelMatcher{
 											{
 												Type: EnvironmentSourceSelectorLabelMatcherTypeFromCompositeFieldPath,
-												//Key:                "foo", // missing
+												// Key:                "foo", // missing
 												ValueFromFieldPath: ptr.To("spec.foo"),
-											}}}}}}}}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		"InvalidMultipleErrors": {
 			reason: "Should reject a invalid environment due to multiple errors, reporting all of them",
@@ -862,7 +959,7 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 							Patches: []EnvironmentPatch{
 								{
 									Type: PatchTypeFromCompositeFieldPath,
-									//FromFieldPath: ptr.To("spec.foo"), // missing
+									// FromFieldPath: ptr.To("spec.foo"), // missing
 									ToFieldPath: ptr.To("metadata.annotations[\"foo\"]"),
 								},
 							},
@@ -870,7 +967,7 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 								{
 									Type: EnvironmentSourceTypeReference,
 									Ref:  &EnvironmentSourceReference{
-										//Name: "foo", // missing
+										// Name: "foo", // missing
 									},
 								},
 								{
@@ -879,9 +976,17 @@ func TestCompositionValidateEnvironment(t *testing.T) {
 										MatchLabels: []EnvironmentSourceSelectorLabelMatcher{
 											{
 												Type: EnvironmentSourceSelectorLabelMatcherTypeFromCompositeFieldPath,
-												//Key:                "foo", // missing
+												// Key:                "foo", // missing
 												ValueFromFieldPath: ptr.To("spec.foo"),
-											}}}}}}}}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 			want: want{
 				output: field.ErrorList{
 					{

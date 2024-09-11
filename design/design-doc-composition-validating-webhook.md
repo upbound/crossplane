@@ -208,7 +208,7 @@ unnecessary check in both `strict` and `loose` modes.
 
 #### Notes
 
-A few additional notes worth highligting or making more explicit w.r.t. the description above:
+A few additional notes worth highlighting or making more explicit w.r.t. the description above:
 
 * We identified 3 increasingly complex types of validation, that we will
     probably introduce in different phases and PRs:
@@ -389,7 +389,7 @@ Ideally, the validation logic should be implemented as much as possible keeping
 in mind that it should be reusable for the following use-cases too:
 
 - linter
-- langage server
+- language server
 - future webhooks validating resources resulting in Compositions, e.g. Packages
 
 This does not mean that an initial implementation should be structured as a
@@ -403,7 +403,7 @@ them.
 Already covered in the Background section with pros and cons.
 
 [original-webhook-pr]: https://github.com/crossplane/crossplane/pull/2919
-[original-webhook-design-doc]: https://github.com/crossplane/crossplane/blob/master/design/design-doc-webhooks.md
+[original-webhook-design-doc]: https://github.com/crossplane/crossplane/blob/main/design/design-doc-webhooks.md
 [original-composition-validation-webhook-issue]: https://github.com/crossplane/crossplane/issues/1476
 [vscode-plugin]: https://github.com/upbound/vscode-up
 [upbound/up]: https://github.com/upbound/up/blob/main/internal/xpkg/snapshot/composition.go#L66

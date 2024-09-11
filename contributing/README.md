@@ -10,13 +10,38 @@ us on [Slack]. Please also take a look at our [code of conduct], which details
 how contributors are expected to conduct themselves as part of the Crossplane
 community.
 
+## Establishing a Development Environment
+
+> The Crossplane project consists of several repositories under the crossplane
+> and crossplane-contrib GitHub organisations. We're experimenting with
+> [Earthly] in this repository (crossplane) and crossplane-runtime. Most other
+> repositories use a `Makefile`. To establish a development environment for a
+> repository with a `Makefile`, try running `make && make help`.
+
+Crossplane is written in [Go]. You don't need to have Go installed to contribute
+code to Crossplane but it helps to use an editor that understands Go.
+
+To setup a Crossplane development environment:
+
+1. Fork and clone this repository.
+1. Install [Docker][get-docker] and [Earthly][get-earthly].
+
+Use the `earthly` command to build and test Crossplane. Run `earthly doc` to see
+available build targets.
+
+Useful targets include:
+
+* `earthly +reviewable` - Run code generators, linters, and unit tests.
+* `earthly -P +e2e` - Run end-to-end tests.
+* `earthly +hack` - Build Crossplane and deploy it to a local `kind` cluster.
+
 ## Checklist Cheat Sheet
 
 Wondering whether something on the pull request checklist applies to your PR?
 Generally:
 
 * Everyone must read and follow this contribution process.
-* Every PR must run (and pass) `make reviewable`.
+* Every PR must run (and pass) `earthly +reviewable`.
 * Most PRs that touch code should touch unit tests. We want ~80% coverage.
 * Any significant feature should be covered by E2E tests. If you're adding a new
   feature, you should probably be adding or updating E2Es.
@@ -63,7 +88,7 @@ Ensure each of your commits is signed-off in compliance with the [Developer
 Certificate of Origin] by using `git commit -s`. The Crossplane project highly
 values readable, idiomatic Go code. Familiarise yourself with the
 [Coding Style](#coding-style) section below and try to preempt any comments your
-reviewers would otherwise leave. Run `make reviewable` to lint your change.
+reviewers would otherwise leave. Run `earthly +reviewable` to lint your change.
 
 All Crossplane features must be covered by unit **and** end-to-end (E2E) tests.
 
@@ -473,6 +498,136 @@ func example() error {
 }
 ```
 
+Previously we made heavy use of error constants, for example:
+
+```go
+const errFetch = "could not fetch the thing"
+
+if err != nil {
+        return errors.Wrap(err, errFetch)
+}
+```
+
+__We no longer recommend this pattern__. Instead, you should mostly create or
+wrap errors with "inline" error strings. Refer to [#4514] for context.
+
+### Test Error Properties, not Error Strings
+
+We recommend using `cmpopts.EquateErrors` to test that your code returns the
+expected error. This `cmp` option will consider one error that `errors.Is`
+another to be equal to it.
+
+When testing a simple function with few error cases it's usually sufficient to
+test simply whether or not an error was returned. You can use `cmpopts.AnyError`
+for this. We prefer `cmpopts.AnyError` to a simple `err == nil` test because it
+keeps our tests consistent. This way it's easy to mix and match tests that check
+for `cmpopts.AnyError` with tests that check for a more specific error in the
+same test table.
+
+For example:
+
+```go
+func TestQuack(t *testing.T) {
+        type want struct {
+                output string
+                err error
+        }
+
+        // We only care that Quack returns an error when supplied with a bad
+        // input, and returns no error when supplied with good input.
+        cases := map[string]struct{
+                input string
+                want  want
+        }{
+                "BadInput": {
+                        input: "Hello!",
+                        want: want{
+                                err: cmpopts.AnyError,
+                        },
+                },
+                "GoodInput": {
+                        input: "Quack!",
+                        want: want{
+                                output: "Quack!",
+                        },
+                },
+        }
+
+        for name, tc := range cases {
+                t.Run(name, func(t *testing.T) {
+                        got, err := Quack(tc.input)
+
+                        if diff := cmp.Diff(got, tc.want.output); diff != "" {
+                                t.Errorf("Quack(): -got, +want:\n%s", diff)
+                        }
+
+                        if diff := cmp.Diff(err, tc.want.err, cmpopts.EquateErrors()); diff != "" {
+                                t.Errorf("Quack(): -got, +want:\n%s", diff)
+                        }
+                })
+        }
+}
+```
+
+For more complex functions with many error cases (like `Reconciler` methods)
+consider injecting dependencies that you can make return a specific sentinel
+error. This way you're able to test that you got the error you'd expect given a
+particular set of inputs and dependency behaviors, not another unexpected error.
+For example:
+
+```go
+func TestComplicatedQuacker(t *testing.T) {
+        // We'll inject this error and test we return an error that errors.Is
+        // (i.e. wraps) it.
+        errBoom := errors.New("boom")
+
+        type want struct {
+                output string
+                err error
+        }
+
+        cases := map[string]struct{
+                q     Quacker
+                input string
+                want  want
+        }{
+                "BadQuackModulator": {
+                        q: &ComplicatedQuacker{
+                                DuckIdentifer: func() (Duck, error) {
+                                        return &MockDuck{}, nil
+                                },
+                                QuackModulator: func() (int, error) {
+                                        // QuackModulator returns our sentinel
+                                        // error.
+                                        return 0, errBoom
+                                }
+                        },
+                        input: "Hello!",
+                        want: want{
+                                // We want an error that errors.Is (i.e. wraps)
+                                // our sentinel error. We don't test what error
+                                // message it was wrapped with.
+                                err: errBoom,
+                        },
+                },
+        }
+
+        for name, tc := range cases {
+                t.Run(name, func(t *testing.T) {
+                        got, err := tc.q.Quack(tc.input)
+
+                        if diff := cmp.Diff(got, tc.want.output); diff != "" {
+                                t.Errorf("q.Quack(): -got, +want:\n%s", diff)
+                        }
+
+                        if diff := cmp.Diff(err, tc.want.err, cmpopts.EquateErrors()); diff != "" {
+                                t.Errorf("q.Quack(): -got, +want:\n%s", diff)
+                        }
+                })
+        }
+}
+```
+
 ### Scope Errors
 
 Where possible, keep errors as narrowly scoped as possible. This avoids bugs
@@ -678,7 +833,7 @@ func TestExample(t *testing.T) {
                         // even for simple comparisons to keep test output
                         // consistent. Some Crossplane specific cmp options can
                         // be found in crossplane-runtime/pkg/test.
-                        if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+                        if diff := cmp.Diff(tc.want.err, err, cmpopts.EquateErrors()); diff != "" {
                                 t.Errorf("%s\nExample(...): -want, +got:\n%s", tc.reason, diff)
                         }
 
@@ -690,68 +845,19 @@ func TestExample(t *testing.T) {
 }
 ```
 
-## Establishing a Development Environment
-
-The Crossplane project consists of several repositories under the crossplane and
-crossplane-contrib GitHub organisations. Most of these projects use the Upbound
-[build submodule]; a library of common Makefiles. Establishing a development
-environment typically requires:
-
-1. Forking and cloning the repository you wish to work on.
-1. Installing development dependencies.
-1. Running `make` to establish the build submodule.
-
-Run `make help` for information on the available Make targets. Useful targets
-include:
-
-* `make reviewable` - Run code generation, linters, and unit tests.
-* `make e2e` - Run end-to-end tests.
-* `make` - Build Crossplane.
-
-Once you've built Crossplane you can deploy it to a Kubernetes cluster of your
-choice. [`kind`] (Kubernetes in Docker) is a good choice for development. The
-`kind.sh` script contains several utilities to deploy and run a development
-build of Crossplane to `kind`:
-
-```bash
-# Build Crossplane locally.
-make
-
-# See what commands are available.
-./cluster/local/kind.sh help
-
-# Start a new kind cluster. Specifying KUBE_IMAGE is optional.
-KUBE_IMAGE=kindest/node:v1.27.1 ./cluster/local/kind.sh up
-
-# Use Helm to deploy the local build of Crossplane.
-./cluster/local/kind.sh helm-install
-
-# Use Helm to upgrade the local build of Crossplane.
-./cluster/local/kind.sh helm-upgrade
-```
-
-When iterating rapidly on a change it can be faster to run Crossplane as a local
-process, rather than as a pod deployed by Helm to your Kubernetes cluster. Use
-Helm to install your local Crossplane build per the above instructions, then:
-
-```bash
-# Stop the Helm-deployed Crossplane pod.
-kubectl -n crossplane-system scale deploy crossplane --replicas=0
-
-# Run Crossplane locally; it should connect to your kind cluster if said cluster
-# is your active kubectl context. You can also go run cmd/crossplane/main.go.
-make run
-```
-
 [Slack]: https://slack.crossplane.io/
-[code of conduct]: https://github.com/cncf/foundation/blob/master/code-of-conduct.md
-[build submodule]: https://github.com/upbound/build/
+[code of conduct]: https://github.com/cncf/foundation/blob/main/code-of-conduct.md
+[Earthly]: https://docs.earthly.dev
+[get-docker]: https://docs.docker.com/get-docker
+[get-earthly]: https://earthly.dev/get-earthly
+[Go]: https://go.dev
+[build submodule]: https://github.com/crossplane/build/
 [`kind`]: https://kind.sigs.k8s.io/
 [Crossplane release cycle]: https://docs.crossplane.io/knowledge-base/guides/release-cycle
-[good git commit hygiene]: https://www.futurelearn.com/info/blog/telling-stories-with-your-git-history
+[good git commit hygiene]: https://www.futurelearn.com/info/blog/telling-stories-with-your-git-history?category=using-futurelearn
 [Developer Certificate of Origin]: https://github.com/apps/dco
-[code review comments]: https://github.com/golang/go/wiki/CodeReviewComments
-[test review comments]: https://github.com/golang/go/wiki/TestComments
+[code review comments]: https://go.dev/wiki/CodeReviewComments
+[test review comments]: https://go.dev/wiki/TestComments
 [E2E readme]: ../test/e2e/README.md
 [docs]: https://github.com/crossplane/docs
 [Effective Go]: https://golang.org/doc/effective_go
@@ -765,3 +871,4 @@ make run
 [CODEOWNERS]: ../CODEOWNERS
 [Reviewers]: ../OWNERS.md#reviewers
 [Maintainers]: ../OWNERS.md#maintainers
+[#4514]: https://github.com/crossplane/crossplane/issues/4514

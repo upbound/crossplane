@@ -33,6 +33,7 @@ import (
 
 	xperrors "github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/fieldpath"
+	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
@@ -366,7 +367,14 @@ func TestValidateFieldPath(t *testing.T) {
 							Properties: map[string]apiextensions.JSONSchemaProps{
 								"forProvider": {
 									Properties: map[string]apiextensions.JSONSchemaProps{
-										"foo": {Type: "string"}}}}}}}},
+										"foo": {Type: "string"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		"AcceptMetadataLabelsValue": {
 			reason: "Should validate a valid field path",
@@ -391,7 +399,14 @@ func TestValidateFieldPath(t *testing.T) {
 							Properties: map[string]apiextensions.JSONSchemaProps{
 								"forProvider": {
 									Properties: map[string]apiextensions.JSONSchemaProps{
-										"foo": {Type: "string"}}}}}}}},
+										"foo": {Type: "string"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		"AcceptFieldPathXPreserveUnknownFields": {
 			reason: "Should not return an error for an undefined but accepted field path",
@@ -404,9 +419,15 @@ func TestValidateFieldPath(t *testing.T) {
 							Properties: map[string]apiextensions.JSONSchemaProps{
 								"forProvider": {
 									Properties: map[string]apiextensions.JSONSchemaProps{
-										"foo": {Type: "string"}},
+										"foo": {Type: "string"},
+									},
 									XPreserveUnknownFields: &[]bool{true}[0],
-								}}}}}},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		"AcceptValidArray": {
 			reason: "Should validate arrays properly",
@@ -424,7 +445,18 @@ func TestValidateFieldPath(t *testing.T) {
 											Items: &apiextensions.JSONSchemaPropsOrArray{
 												Schema: &apiextensions.JSONSchemaProps{
 													Properties: map[string]apiextensions.JSONSchemaProps{
-														"bar": {Type: "string"}}}}}}}}}}}},
+														"bar": {Type: "string"},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		"AcceptComplexSchema": {
 			reason: "Should validate properly with complex schema",
@@ -461,6 +493,14 @@ func TestValidateFieldPath(t *testing.T) {
 				schema:    &apiextensions.JSONSchemaProps{Properties: map[string]apiextensions.JSONSchemaProps{"metadata": {Type: "object"}}},
 			},
 		},
+		"AcceptMetadataGenerateName": {
+			reason: "Should accept metadata.generateName",
+			want:   want{err: nil, fieldType: "string"},
+			args: args{
+				fieldPath: "metadata.generateName",
+				schema:    &apiextensions.JSONSchemaProps{Properties: map[string]apiextensions.JSONSchemaProps{"metadata": {Type: "object"}}},
+			},
+		},
 		"AcceptXPreserveUnknownFieldsInAdditionalProperties": {
 			reason: "Should properly handle x-preserve-unknown-fields even if defined in a nested schema",
 			want:   want{err: nil, fieldType: ""},
@@ -475,7 +515,10 @@ func TestValidateFieldPath(t *testing.T) {
 									XPreserveUnknownFields: &[]bool{true}[0],
 								},
 							},
-						}}}},
+						},
+					},
+				},
+			},
 		},
 		"AcceptAnnotations": {
 			want: want{err: nil, fieldType: "string"},
@@ -896,7 +939,6 @@ func TestGetSchemaForVersion(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestComposedTemplateGetBaseObject(t *testing.T) {
@@ -922,12 +964,14 @@ func TestComposedTemplateGetBaseObject(t *testing.T) {
 				},
 			},
 			want: want{
-				output: &unstructured.Unstructured{
-					Object: map[string]interface{}{
-						"apiVersion": "v1",
-						"kind":       "Service",
-						"metadata": map[string]interface{}{
-							"name": "foo",
+				output: &composed.Unstructured{
+					Unstructured: unstructured.Unstructured{
+						Object: map[string]interface{}{
+							"apiVersion": "v1",
+							"kind":       "Service",
+							"metadata": map[string]interface{}{
+								"name": "foo",
+							},
 						},
 					},
 				},

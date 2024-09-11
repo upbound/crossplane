@@ -21,7 +21,6 @@ import (
 	"io"
 
 	"github.com/spf13/afero"
-	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -36,7 +35,6 @@ import (
 )
 
 const (
-	defaultCacheDir = ".crossplane/cache"
 	packageFileName = "package.yaml"
 	baseLayerLabel  = "base"
 
@@ -44,18 +42,18 @@ const (
 	imageFmt = "%s:%s"
 )
 
-// Manager defines a Manager for preparing Crossplane packages for validation
+// Manager defines a Manager for preparing Crossplane packages for validation.
 type Manager struct {
 	fetcher ImageFetcher
 	cache   Cache
 	writer  io.Writer
 
-	crds  []*apiextv1.CustomResourceDefinition
-	deps  map[string]bool // One level dependency images
-	confs map[string]bool // Configuration images
+	crds  []*extv1.CustomResourceDefinition
+	deps  map[string]bool                  // Dependency images
+	confs map[string]*metav1.Configuration // Configuration images
 }
 
-// NewManager returns a new Manager
+// NewManager returns a new Manager.
 func NewManager(cacheDir string, fs afero.Fs, w io.Writer) *Manager {
 	m := &Manager{}
 
@@ -66,15 +64,15 @@ func NewManager(cacheDir string, fs afero.Fs, w io.Writer) *Manager {
 
 	m.fetcher = &Fetcher{}
 	m.writer = w
-	m.crds = make([]*apiextv1.CustomResourceDefinition, 0)
+	m.crds = make([]*extv1.CustomResourceDefinition, 0)
 	m.deps = make(map[string]bool)
-	m.confs = make(map[string]bool)
+	m.confs = make(map[string]*metav1.Configuration)
 
 	return m
 }
 
-// PrepExtensions converts the unstructured XRDs/CRDs to CRDs and extract package images to add as a dependency
-func (m *Manager) PrepExtensions(extensions []*unstructured.Unstructured) error { //nolint:gocyclo // the function itself is not that complex, it just has different cases
+// PrepExtensions converts the unstructured XRDs/CRDs to CRDs and extract package images to add as a dependency.
+func (m *Manager) PrepExtensions(extensions []*unstructured.Unstructured) error { //nolint:gocognit // the function itself is not that complex, it just has different cases
 	for _, e := range extensions {
 		switch e.GroupVersionKind().GroupKind() {
 		case schema.GroupKind{Group: "apiextensions.k8s.io", Kind: "CustomResourceDefinition"}:
@@ -132,7 +130,20 @@ func (m *Manager) PrepExtensions(extensions []*unstructured.Unstructured) error 
 				return errors.Wrapf(err, "cannot get package image")
 			}
 
-			m.confs[image] = true
+			m.confs[image] = nil
+
+		case schema.GroupKind{Group: "meta.pkg.crossplane.io", Kind: "Configuration"}:
+			meta, err := e.MarshalJSON()
+			if err != nil {
+				return errors.Wrap(err, "cannot marshal configuration to JSON")
+			}
+
+			cfg := &metav1.Configuration{}
+			if err := yaml.Unmarshal(meta, cfg); err != nil {
+				return errors.Wrapf(err, "cannot unmarshal configuration YAML")
+			}
+
+			m.confs[cfg.Name] = cfg
 
 		default:
 			continue
@@ -142,7 +153,7 @@ func (m *Manager) PrepExtensions(extensions []*unstructured.Unstructured) error 
 	return nil
 }
 
-// CacheAndLoad finds and caches dependencies and loads them as CRDs
+// CacheAndLoad finds and caches dependencies and loads them as CRDs.
 func (m *Manager) CacheAndLoad(cleanCache bool) error {
 	if cleanCache {
 		if err := m.cache.Flush(); err != nil {
@@ -154,7 +165,7 @@ func (m *Manager) CacheAndLoad(cleanCache bool) error {
 		return errors.Wrapf(err, "cannot initialize cache directory")
 	}
 
-	if err := m.addDependencies(); err != nil {
+	if err := m.addDependencies(m.confs); err != nil {
 		return errors.Wrapf(err, "cannot add package dependencies")
 	}
 
@@ -170,39 +181,56 @@ func (m *Manager) CacheAndLoad(cleanCache bool) error {
 	return m.PrepExtensions(schemas)
 }
 
-func (m *Manager) addDependencies() error {
-	for image := range m.confs {
-		m.deps[image] = true // we need to download the configuration package for the XRDs
+func (m *Manager) addDependencies(confs map[string]*metav1.Configuration) error {
+	if len(confs) == 0 {
+		return nil
+	}
 
-		layer, err := m.fetcher.FetchBaseLayer(image)
-		if err != nil {
-			return errors.Wrapf(err, "cannot download package %s", image)
-		}
+	deepConfs := make(map[string]*metav1.Configuration)
+	for image := range confs {
+		cfg := m.confs[image]
 
-		_, meta, err := extractPackageContent(*layer)
-		if err != nil {
-			return errors.Wrapf(err, "cannot extract package file and meta")
-		}
+		if cfg == nil {
+			m.deps[image] = true // we need to download the configuration package for the XRDs
 
-		cfg := &metav1.Configuration{}
-		if err := yaml.Unmarshal(meta, cfg); err != nil {
-			return errors.Wrapf(err, "cannot unmarshal configuration YAML")
+			layer, err := m.fetcher.FetchBaseLayer(image)
+			if err != nil {
+				return errors.Wrapf(err, "cannot download package %s", image)
+			}
+
+			_, meta, err := extractPackageContent(*layer)
+			if err != nil {
+				return errors.Wrapf(err, "cannot extract package file and meta")
+			}
+			if err := yaml.Unmarshal(meta, &cfg); err != nil {
+				return errors.Wrapf(err, "cannot unmarshal configuration YAML")
+			}
+			m.confs[image] = cfg // update the configuration
 		}
 
 		deps := cfg.Spec.MetaSpec.DependsOn
 		for _, dep := range deps {
 			image := ""
-			if dep.Configuration != nil {
+			if dep.Configuration != nil { //nolint:gocritic // switch is not suitable here
 				image = *dep.Configuration
 			} else if dep.Provider != nil {
 				image = *dep.Provider
+			} else if dep.Function != nil {
+				image = *dep.Function
 			}
-			image = fmt.Sprintf(imageFmt, image, dep.Version)
-			m.deps[image] = true
+			if len(image) > 0 {
+				image = fmt.Sprintf(imageFmt, image, dep.Version)
+				m.deps[image] = true
+
+				if _, ok := m.confs[image]; !ok && dep.Configuration != nil {
+					deepConfs[image] = nil
+					m.confs[image] = nil
+				}
+			}
 		}
 	}
 
-	return nil
+	return m.addDependencies(deepConfs)
 }
 
 func (m *Manager) cacheDependencies() error {

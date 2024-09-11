@@ -33,9 +33,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 
-	pkgmetav1beta1 "github.com/crossplane/crossplane/apis/pkg/meta/v1beta1"
+	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
-	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
 	"github.com/crossplane/crossplane/internal/xpkg"
 )
 
@@ -60,11 +59,11 @@ func TestFunctionPreHook(t *testing.T) {
 		"Success": {
 			reason: "Successful run of pre hook.",
 			args: args{
-				pkg: &pkgmetav1beta1.Function{
-					Spec: pkgmetav1beta1.FunctionSpec{},
+				pkg: &pkgmetav1.Function{
+					Spec: pkgmetav1.FunctionSpec{},
 				},
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							DesiredState: v1.PackageRevisionActive,
 						},
@@ -74,7 +73,7 @@ func TestFunctionPreHook(t *testing.T) {
 					},
 				},
 				manifests: &MockManifestBuilder{
-					ServiceFn: func(overrides ...ServiceOverride) *corev1.Service {
+					ServiceFn: func(_ ...ServiceOverride) *corev1.Service {
 						return &corev1.Service{}
 					},
 					TLSServerSecretFn: func() *corev1.Secret {
@@ -82,24 +81,24 @@ func TestFunctionPreHook(t *testing.T) {
 					},
 				},
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+					MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
 						if svc, ok := obj.(*corev1.Service); ok {
 							svc.Name = "some-service"
 							svc.Namespace = "some-namespace"
 						}
 						return nil
 					},
-					MockPatch: func(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					MockPatch: func(_ context.Context, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
 						return nil
 					},
-					MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+					MockUpdate: func(_ context.Context, _ client.Object, _ ...client.UpdateOption) error {
 						return nil
 					},
 				},
 			},
 			want: want{
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							DesiredState: v1.PackageRevisionActive,
 						},
@@ -107,7 +106,7 @@ func TestFunctionPreHook(t *testing.T) {
 							TLSServerSecretName: ptr.To("some-server-secret"),
 						},
 					},
-					Status: v1beta1.FunctionRevisionStatus{
+					Status: v1.FunctionRevisionStatus{
 						Endpoint: fmt.Sprintf(serviceEndpointFmt, "some-service", "some-namespace", servicePort),
 					},
 				},
@@ -157,9 +156,9 @@ func TestFunctionPostHook(t *testing.T) {
 		"FunctionInactive": {
 			reason: "Should do nothing if function revision is inactive.",
 			args: args{
-				pkg: &pkgmetav1beta1.Function{},
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				pkg: &pkgmetav1.Function{},
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							DesiredState: v1.PackageRevisionInactive,
 						},
@@ -167,8 +166,8 @@ func TestFunctionPostHook(t *testing.T) {
 				},
 			},
 			want: want{
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							DesiredState: v1.PackageRevisionInactive,
 						},
@@ -179,9 +178,9 @@ func TestFunctionPostHook(t *testing.T) {
 		"ErrApplySA": {
 			reason: "Should return error if we fail to apply service account for active function revision.",
 			args: args{
-				pkg: &pkgmetav1beta1.Function{},
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				pkg: &pkgmetav1.Function{},
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -189,25 +188,25 @@ func TestFunctionPostHook(t *testing.T) {
 					},
 				},
 				manifests: &MockManifestBuilder{
-					ServiceAccountFn: func(overrides ...ServiceAccountOverride) *corev1.ServiceAccount {
+					ServiceAccountFn: func(_ ...ServiceAccountOverride) *corev1.ServiceAccount {
 						return &corev1.ServiceAccount{}
 					},
-					DeploymentFn: func(serviceAccount string, overrides ...DeploymentOverride) *appsv1.Deployment {
+					DeploymentFn: func(_ string, _ ...DeploymentOverride) *appsv1.Deployment {
 						return &appsv1.Deployment{}
 					},
 				},
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+					MockGet: func(_ context.Context, _ client.ObjectKey, _ client.Object) error {
 						return nil
 					},
-					MockPatch: func(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					MockPatch: func(_ context.Context, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
 						return errBoom
 					},
 				},
 			},
 			want: want{
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -220,9 +219,9 @@ func TestFunctionPostHook(t *testing.T) {
 		"ErrApplyDeployment": {
 			reason: "Should return error if we fail to apply deployment for active function revision.",
 			args: args{
-				pkg: &pkgmetav1beta1.Function{},
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				pkg: &pkgmetav1.Function{},
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -230,18 +229,18 @@ func TestFunctionPostHook(t *testing.T) {
 					},
 				},
 				manifests: &MockManifestBuilder{
-					ServiceAccountFn: func(overrides ...ServiceAccountOverride) *corev1.ServiceAccount {
+					ServiceAccountFn: func(_ ...ServiceAccountOverride) *corev1.ServiceAccount {
 						return &corev1.ServiceAccount{}
 					},
-					DeploymentFn: func(serviceAccount string, overrides ...DeploymentOverride) *appsv1.Deployment {
+					DeploymentFn: func(_ string, _ ...DeploymentOverride) *appsv1.Deployment {
 						return &appsv1.Deployment{}
 					},
 				},
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+					MockGet: func(_ context.Context, _ client.ObjectKey, _ client.Object) error {
 						return nil
 					},
-					MockPatch: func(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					MockPatch: func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
 						if _, ok := obj.(*appsv1.Deployment); ok {
 							return errBoom
 						}
@@ -250,8 +249,8 @@ func TestFunctionPostHook(t *testing.T) {
 				},
 			},
 			want: want{
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -264,9 +263,9 @@ func TestFunctionPostHook(t *testing.T) {
 		"ErrDeploymentNoAvailableConditionYet": {
 			reason: "Should return error if deployment for active function revision has no available condition yet.",
 			args: args{
-				pkg: &pkgmetav1beta1.Function{},
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				pkg: &pkgmetav1.Function{},
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -274,25 +273,25 @@ func TestFunctionPostHook(t *testing.T) {
 					},
 				},
 				manifests: &MockManifestBuilder{
-					ServiceAccountFn: func(overrides ...ServiceAccountOverride) *corev1.ServiceAccount {
+					ServiceAccountFn: func(_ ...ServiceAccountOverride) *corev1.ServiceAccount {
 						return &corev1.ServiceAccount{}
 					},
-					DeploymentFn: func(serviceAccount string, overrides ...DeploymentOverride) *appsv1.Deployment {
+					DeploymentFn: func(_ string, _ ...DeploymentOverride) *appsv1.Deployment {
 						return &appsv1.Deployment{}
 					},
 				},
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+					MockGet: func(_ context.Context, _ client.ObjectKey, _ client.Object) error {
 						return nil
 					},
-					MockPatch: func(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					MockPatch: func(_ context.Context, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
 						return nil
 					},
 				},
 			},
 			want: want{
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -305,9 +304,9 @@ func TestFunctionPostHook(t *testing.T) {
 		"ErrUnavailableDeployment": {
 			reason: "Should return error if deployment is unavailable for function revision.",
 			args: args{
-				pkg: &pkgmetav1beta1.Function{},
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				pkg: &pkgmetav1.Function{},
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -315,18 +314,18 @@ func TestFunctionPostHook(t *testing.T) {
 					},
 				},
 				manifests: &MockManifestBuilder{
-					ServiceAccountFn: func(overrides ...ServiceAccountOverride) *corev1.ServiceAccount {
+					ServiceAccountFn: func(_ ...ServiceAccountOverride) *corev1.ServiceAccount {
 						return &corev1.ServiceAccount{}
 					},
-					DeploymentFn: func(serviceAccount string, overrides ...DeploymentOverride) *appsv1.Deployment {
+					DeploymentFn: func(_ string, _ ...DeploymentOverride) *appsv1.Deployment {
 						return &appsv1.Deployment{}
 					},
 				},
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+					MockGet: func(_ context.Context, _ client.ObjectKey, _ client.Object) error {
 						return nil
 					},
-					MockPatch: func(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					MockPatch: func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
 						if d, ok := obj.(*appsv1.Deployment); ok {
 							d.Status.Conditions = []appsv1.DeploymentCondition{{
 								Type:    appsv1.DeploymentAvailable,
@@ -340,8 +339,8 @@ func TestFunctionPostHook(t *testing.T) {
 				},
 			},
 			want: want{
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -354,9 +353,9 @@ func TestFunctionPostHook(t *testing.T) {
 		"Successful": {
 			reason: "Should not return error if successfully applied service account and deployment for active function revision and the deployment is ready.",
 			args: args{
-				pkg: &pkgmetav1beta1.Function{},
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				pkg: &pkgmetav1.Function{},
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -364,18 +363,18 @@ func TestFunctionPostHook(t *testing.T) {
 					},
 				},
 				manifests: &MockManifestBuilder{
-					ServiceAccountFn: func(overrides ...ServiceAccountOverride) *corev1.ServiceAccount {
+					ServiceAccountFn: func(_ ...ServiceAccountOverride) *corev1.ServiceAccount {
 						return &corev1.ServiceAccount{}
 					},
-					DeploymentFn: func(serviceAccount string, overrides ...DeploymentOverride) *appsv1.Deployment {
+					DeploymentFn: func(_ string, _ ...DeploymentOverride) *appsv1.Deployment {
 						return &appsv1.Deployment{}
 					},
 				},
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+					MockGet: func(_ context.Context, _ client.ObjectKey, _ client.Object) error {
 						return nil
 					},
-					MockPatch: func(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					MockPatch: func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
 						if d, ok := obj.(*appsv1.Deployment); ok {
 							d.Status.Conditions = []appsv1.DeploymentCondition{{
 								Type:   appsv1.DeploymentAvailable,
@@ -388,8 +387,58 @@ func TestFunctionPostHook(t *testing.T) {
 				},
 			},
 			want: want{
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
+						PackageRevisionSpec: v1.PackageRevisionSpec{
+							Package:      functionImage,
+							DesiredState: v1.PackageRevisionActive,
+						},
+					},
+				},
+			},
+		},
+		"SuccessWithExtraSecret": {
+			reason: "Should not return error if successfully applied service account with additional secret.",
+			args: args{
+				pkg: &pkgmetav1.Function{},
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
+						PackageRevisionSpec: v1.PackageRevisionSpec{
+							Package:      functionImage,
+							DesiredState: v1.PackageRevisionActive,
+						},
+					},
+				},
+				manifests: &MockManifestBuilder{
+					ServiceAccountFn: func(_ ...ServiceAccountOverride) *corev1.ServiceAccount {
+						return &corev1.ServiceAccount{}
+					},
+					DeploymentFn: func(_ string, _ ...DeploymentOverride) *appsv1.Deployment {
+						return &appsv1.Deployment{}
+					},
+				},
+				client: &test.MockClient{
+					MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
+						if sa, ok := obj.(*corev1.ServiceAccount); ok {
+							sa.ImagePullSecrets = []corev1.LocalObjectReference{{Name: "test_secret"}}
+						}
+						return nil
+					},
+					MockPatch: func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
+						if d, ok := obj.(*appsv1.Deployment); ok {
+							d.Status.Conditions = []appsv1.DeploymentCondition{{
+								Type:   appsv1.DeploymentAvailable,
+								Status: corev1.ConditionTrue,
+							}}
+							return nil
+						}
+						return nil
+					},
+				},
+			},
+			want: want{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -401,9 +450,9 @@ func TestFunctionPostHook(t *testing.T) {
 		"SuccessfulWithExternallyManagedSA": {
 			reason: "Should be successful without creating an SA, when the SA is managed externally",
 			args: args{
-				pkg: &pkgmetav1beta1.Function{},
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				pkg: &pkgmetav1.Function{},
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -411,15 +460,15 @@ func TestFunctionPostHook(t *testing.T) {
 					},
 				},
 				manifests: &MockManifestBuilder{
-					ServiceAccountFn: func(overrides ...ServiceAccountOverride) *corev1.ServiceAccount {
+					ServiceAccountFn: func(_ ...ServiceAccountOverride) *corev1.ServiceAccount {
 						return &corev1.ServiceAccount{}
 					},
-					DeploymentFn: func(serviceAccount string, overrides ...DeploymentOverride) *appsv1.Deployment {
+					DeploymentFn: func(_ string, _ ...DeploymentOverride) *appsv1.Deployment {
 						return &appsv1.Deployment{}
 					},
 				},
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+					MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
 						if sa, ok := obj.(*corev1.ServiceAccount); ok {
 							if sa.GetName() == xpManagedSA {
 								return kerrors.NewNotFound(corev1.Resource("serviceaccount"), xpManagedSA)
@@ -427,7 +476,7 @@ func TestFunctionPostHook(t *testing.T) {
 						}
 						return nil
 					},
-					MockCreate: func(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+					MockCreate: func(_ context.Context, obj client.Object, _ ...client.CreateOption) error {
 						if sa, ok := obj.(*corev1.ServiceAccount); ok {
 							if sa.GetName() == xpManagedSA {
 								t.Error("unexpected call to create SA when SA is managed externally")
@@ -435,7 +484,7 @@ func TestFunctionPostHook(t *testing.T) {
 						}
 						return nil
 					},
-					MockPatch: func(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					MockPatch: func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
 						if d, ok := obj.(*appsv1.Deployment); ok {
 							d.Status.Conditions = []appsv1.DeploymentCondition{{
 								Type:   appsv1.DeploymentAvailable,
@@ -453,8 +502,8 @@ func TestFunctionPostHook(t *testing.T) {
 				},
 			},
 			want: want{
-				rev: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				rev: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package:      functionImage,
 							DesiredState: v1.PackageRevisionActive,
@@ -501,15 +550,15 @@ func TestFunctionDeactivateHook(t *testing.T) {
 			reason: "Should return error if we fail to delete deployment.",
 			args: args{
 				manifests: &MockManifestBuilder{
-					ServiceAccountFn: func(overrides ...ServiceAccountOverride) *corev1.ServiceAccount {
+					ServiceAccountFn: func(_ ...ServiceAccountOverride) *corev1.ServiceAccount {
 						return &corev1.ServiceAccount{}
 					},
-					DeploymentFn: func(serviceAccount string, overrides ...DeploymentOverride) *appsv1.Deployment {
+					DeploymentFn: func(_ string, _ ...DeploymentOverride) *appsv1.Deployment {
 						return &appsv1.Deployment{}
 					},
 				},
 				client: &test.MockClient{
-					MockDelete: func(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+					MockDelete: func(_ context.Context, obj client.Object, _ ...client.DeleteOption) error {
 						if _, ok := obj.(*appsv1.Deployment); ok {
 							return errBoom
 						}
@@ -525,14 +574,14 @@ func TestFunctionDeactivateHook(t *testing.T) {
 			reason: "Should not return error if successfully deleted service account and deployment.",
 			args: args{
 				manifests: &MockManifestBuilder{
-					ServiceAccountFn: func(overrides ...ServiceAccountOverride) *corev1.ServiceAccount {
+					ServiceAccountFn: func(_ ...ServiceAccountOverride) *corev1.ServiceAccount {
 						return &corev1.ServiceAccount{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "some-sa",
 							},
 						}
 					},
-					DeploymentFn: func(serviceAccount string, overrides ...DeploymentOverride) *appsv1.Deployment {
+					DeploymentFn: func(_ string, _ ...DeploymentOverride) *appsv1.Deployment {
 						return &appsv1.Deployment{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "some-deployment",
@@ -552,7 +601,7 @@ func TestFunctionDeactivateHook(t *testing.T) {
 					},
 				},
 				client: &test.MockClient{
-					MockDelete: func(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+					MockDelete: func(_ context.Context, obj client.Object, _ ...client.DeleteOption) error {
 						switch obj.(type) {
 						case *corev1.ServiceAccount:
 							return errors.New("service account should not be deleted during deactivation")
@@ -586,8 +635,8 @@ func TestFunctionDeactivateHook(t *testing.T) {
 
 func TestGetFunctionImage(t *testing.T) {
 	type args struct {
-		functionMeta     *pkgmetav1beta1.Function
-		functionRevision *v1beta1.FunctionRevision
+		functionMeta     *pkgmetav1.Function
+		functionRevision *v1.FunctionRevision
 		defaultRegistry  string
 	}
 
@@ -604,13 +653,13 @@ func TestGetFunctionImage(t *testing.T) {
 		"NoOverrideFromMeta": {
 			reason: "Should use the image from the package revision and add default registry when no override is present.",
 			args: args{
-				functionMeta: &pkgmetav1beta1.Function{
-					Spec: pkgmetav1beta1.FunctionSpec{
+				functionMeta: &pkgmetav1.Function{
+					Spec: pkgmetav1.FunctionSpec{
 						Image: nil,
 					},
 				},
-				functionRevision: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				functionRevision: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package: "crossplane/func-bar:v1.2.3",
 						},
@@ -626,13 +675,13 @@ func TestGetFunctionImage(t *testing.T) {
 		"WithOverrideFromMeta": {
 			reason: "Should use the override from the function meta when present and add default registry.",
 			args: args{
-				functionMeta: &pkgmetav1beta1.Function{
-					Spec: pkgmetav1beta1.FunctionSpec{
+				functionMeta: &pkgmetav1.Function{
+					Spec: pkgmetav1.FunctionSpec{
 						Image: ptr.To("crossplane/func-bar-server:v1.2.3"),
 					},
 				},
-				functionRevision: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				functionRevision: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package: "crossplane/func-bar:v1.2.3",
 						},
@@ -648,13 +697,13 @@ func TestGetFunctionImage(t *testing.T) {
 		"RegistrySpecified": {
 			reason: "Should honor the registry as specified on the package, even if its different than the default registry.",
 			args: args{
-				functionMeta: &pkgmetav1beta1.Function{
-					Spec: pkgmetav1beta1.FunctionSpec{
+				functionMeta: &pkgmetav1.Function{
+					Spec: pkgmetav1.FunctionSpec{
 						Image: nil,
 					},
 				},
-				functionRevision: &v1beta1.FunctionRevision{
-					Spec: v1beta1.FunctionRevisionSpec{
+				functionRevision: &v1.FunctionRevision{
+					Spec: v1.FunctionRevisionSpec{
 						PackageRevisionSpec: v1.PackageRevisionSpec{
 							Package: "registry.notdefault.io/crossplane/func-bar:v1.2.3",
 						},

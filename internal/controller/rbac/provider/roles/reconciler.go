@@ -115,7 +115,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 
 	wrh := &EnqueueRequestForAllRevisionsWithRequests{
 		client:          mgr.GetClient(),
-		clusterRoleName: o.AllowClusterRole}
+		clusterRoleName: o.AllowClusterRole,
+	}
 
 	sfh := &EnqueueRequestForAllRevisionsInFamily{
 		client: mgr.GetClient(),
@@ -228,7 +229,7 @@ type Reconciler struct {
 
 // Reconcile a ProviderRevision by creating a series of opinionated ClusterRoles
 // that may be bound to allow access to the resources it defines.
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocyclo // Slightly over (13).
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocognit // Slightly over (13).
 	log := r.log.WithValues("request", req)
 	log.Debug("Reconciling")
 
@@ -332,7 +333,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	applied := make([]string, 0)
 	for _, cr := range r.rbac.RenderClusterRoles(pr, resources) {
-		cr := cr // Pin range variable so we can take its address.
 		log := log.WithValues("role-name", cr.GetName())
 		origRV := ""
 		err := r.client.Apply(ctx, &cr,
@@ -373,7 +373,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 func DefinedResources(refs []xpv1.TypedReference) []Resource {
 	out := make([]Resource, 0, len(refs))
 	for _, ref := range refs {
-
 		// This would only return an error if the APIVersion contained more than
 		// one "/". This should be impossible, but if it somehow happens we'll
 		// just skip this resource since it can't be a CRD.
@@ -399,8 +398,10 @@ func DefinedResources(refs []xpv1.TypedReference) []Resource {
 // ClusterRoles. We consider ClusterRoles to be different if their labels and
 // rules do not match.
 func ClusterRolesDiffer(current, desired runtime.Object) bool {
-	c := current.(*rbacv1.ClusterRole)
-	d := desired.(*rbacv1.ClusterRole)
+	// Calling this with anything but ClusterRoles is a programming error. If it
+	// happens, we probably do want to panic.
+	c := current.(*rbacv1.ClusterRole) //nolint:forcetypeassert // See above.
+	d := desired.(*rbacv1.ClusterRole) //nolint:forcetypeassert // See above.
 	return !cmp.Equal(c.GetLabels(), d.GetLabels()) || !cmp.Equal(c.Rules, d.Rules)
 }
 

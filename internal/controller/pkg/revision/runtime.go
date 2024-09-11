@@ -58,6 +58,7 @@ const (
 	tlsClientCertsDir        = "/tls/client"
 )
 
+//nolint:gochecknoglobals // We treat these as constants, but take their addresses.
 var (
 	runAsUser                = int64(2000)
 	runAsGroup               = int64(2000)
@@ -84,13 +85,13 @@ type ManifestBuilder interface {
 // establishes objects.
 type RuntimeHooks interface {
 	// Pre performs operations meant to happen before establishing objects.
-	Pre(context.Context, runtime.Object, v1.PackageRevisionWithRuntime, ManifestBuilder) error
+	Pre(ctx context.Context, obj runtime.Object, pr v1.PackageRevisionWithRuntime, b ManifestBuilder) error
 
 	// Post performs operations meant to happen after establishing objects.
-	Post(context.Context, runtime.Object, v1.PackageRevisionWithRuntime, ManifestBuilder) error
+	Post(ctx context.Context, obj runtime.Object, pr v1.PackageRevisionWithRuntime, b ManifestBuilder) error
 
 	// Deactivate performs operations meant to happen before deactivating a revision.
-	Deactivate(context.Context, v1.PackageRevisionWithRuntime, ManifestBuilder) error
+	Deactivate(ctx context.Context, pr v1.PackageRevisionWithRuntime, b ManifestBuilder) error
 }
 
 // RuntimeManifestBuilder builds the runtime manifests for a package revision.
@@ -344,7 +345,7 @@ func (b *RuntimeManifestBuilder) packageName() string {
 }
 
 func (b *RuntimeManifestBuilder) packageType() string {
-	if _, ok := b.revision.(*v1beta1.FunctionRevision); ok {
+	if _, ok := b.revision.(*v1.FunctionRevision); ok {
 		return "function"
 	}
 	return "provider"

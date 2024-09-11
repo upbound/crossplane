@@ -107,7 +107,7 @@ type SecretStoreConnectionPublisher struct {
 	filter    []string
 }
 
-// NewSecretStoreConnectionPublisher returns a SecretStoreConnectionPublisher
+// NewSecretStoreConnectionPublisher returns a SecretStoreConnectionPublisher.
 func NewSecretStoreConnectionPublisher(p managed.ConnectionPublisher, filter []string) *SecretStoreConnectionPublisher {
 	return &SecretStoreConnectionPublisher{
 		publisher: p,
@@ -196,7 +196,7 @@ func (fn ConnectionDetailsExtractorFn) ExtractConnection(cd resource.Composed, c
 // ExtractConnectionDetails extracts XR connection details from the supplied
 // composed resource. If no ExtractConfigs are supplied no connection details
 // will be returned.
-func ExtractConnectionDetails(cd resource.Composed, data managed.ConnectionDetails, cfg ...ConnectionDetailExtractConfig) (managed.ConnectionDetails, error) { //nolint:gocyclo // TODO(negz): Break extraction out from validation, like we do with readiness.
+func ExtractConnectionDetails(cd resource.Composed, data managed.ConnectionDetails, cfg ...ConnectionDetailExtractConfig) (managed.ConnectionDetails, error) {
 	out := map[string][]byte{}
 	for _, cfg := range cfg {
 		if cfg.Name == "" {
@@ -255,7 +255,7 @@ type ConnectionDetailExtractConfig struct {
 	// connection secret of the composition instance.
 	Name string
 
-	// FromConnectionDetailKey is the key that will be used to fetch the value
+	// FromConnectionSecretKey is the key that will be used to fetch the value
 	// from the given target resource's connection details.
 	FromConnectionSecretKey *string
 

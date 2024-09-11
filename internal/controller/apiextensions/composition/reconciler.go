@@ -36,7 +36,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	"github.com/crossplane/crossplane/internal/controller/apiextensions/controller"
@@ -46,7 +45,7 @@ const (
 	timeout = 2 * time.Minute
 )
 
-// Error strings
+// Error strings.
 const (
 	errGet             = "cannot get Composition"
 	errListRevs        = "cannot list CompositionRevisions"
@@ -98,10 +97,8 @@ func WithRecorder(er event.Recorder) ReconcilerOption {
 
 // NewReconciler returns a Reconciler of Compositions.
 func NewReconciler(mgr manager.Manager, opts ...ReconcilerOption) *Reconciler {
-	kube := unstructured.NewClient(mgr.GetClient())
-
 	r := &Reconciler{
-		client: kube,
+		client: mgr.GetClient(),
 		log:    logging.NewNopLogger(),
 		record: event.NewNopRecorder(),
 	}
@@ -122,7 +119,7 @@ type Reconciler struct {
 }
 
 // Reconcile a Composition.
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocyclo // Only slightly over (12).
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := r.log.WithValues("request", req)
 	log.Debug("Reconciling")
 

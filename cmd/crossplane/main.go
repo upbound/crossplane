@@ -41,15 +41,17 @@ import (
 	"github.com/crossplane/crossplane/internal/version"
 )
 
-type debugFlag bool
-type versionFlag bool
+type (
+	debugFlag   bool
+	versionFlag bool
+)
 
-var cli struct {
-	Debug debugFlag `short:"d" help:"Print verbose logging statements."`
+type cli struct {
+	Debug debugFlag `help:"Print verbose logging statements." short:"d"`
 
-	Version versionFlag `short:"v" help:"Print version and quit."`
+	Version versionFlag `help:"Print version and quit." short:"v"`
 
-	Core core.Command `cmd:"" help:"Start core Crossplane controllers." default:"withargs"`
+	Core core.Command `cmd:"" default:"withargs"                                help:"Start core Crossplane controllers."`
 	Rbac rbac.Command `cmd:"" help:"Start Crossplane RBAC Manager controllers."`
 }
 
@@ -68,22 +70,26 @@ func (d debugFlag) BeforeApply(ctx *kong.Context) error { //nolint:unparam // Be
 	// *very* verbose even at info level, so we only provide it a real
 	// logger when we're running in debug mode.
 	ctrl.SetLogger(zl)
+	logging.SetFilteredKlogLogger(zl)
 	return nil
 }
 
 func (v versionFlag) BeforeApply(app *kong.Kong) error { //nolint:unparam // BeforeApply requires this signature.
-	fmt.Fprintln(app.Stdout, version.New().GetVersionString())
+	_, _ = fmt.Fprintln(app.Stdout, version.New().GetVersionString())
 	app.Exit(0)
 	return nil
 }
 
 func main() {
 	zl := zap.New().WithName("crossplane")
+	logging.SetFilteredKlogLogger(zl)
+
 	// Setting the controller-runtime logger to a no-op logger by default,
 	// unless debug mode is enabled. This is because the controller-runtime
 	// logger is *very* verbose even at info level. This is not really needed,
 	// but otherwise we get a warning from the controller-runtime.
 	ctrl.SetLogger(zap.New(zap.WriteTo(io.Discard)))
+
 	// Note that the controller managers scheme must be a superset of the
 	// package manager's object scheme; it must contain all object types that
 	// may appear in a Crossplane package. This is because the package manager
@@ -91,7 +97,7 @@ func main() {
 	// objects.
 	s := runtime.NewScheme()
 
-	ctx := kong.Parse(&cli,
+	ctx := kong.Parse(&cli{},
 		kong.Name("crossplane"),
 		kong.Description("An open source multicloud control plane."),
 		kong.BindTo(logging.NewLogrLogger(zl), (*logging.Logger)(nil)),

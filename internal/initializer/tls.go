@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
@@ -50,16 +49,16 @@ const (
 
 const (
 	// RootCACertSecretName is the name of the secret that will store CA certificates and rest of the
-	// certificates created per entities will be signed by this CA
+	// certificates created per entities will be signed by this CA.
 	RootCACertSecretName = "crossplane-root-ca"
 
-	// SecretKeyCACert is the secret key of CA certificate
+	// SecretKeyCACert is the secret key of CA certificate.
 	SecretKeyCACert = "ca.crt"
 )
 
 // TLSCertificateGenerator is an initializer step that will find the given secret
 // and fill its tls.crt, tls.key and ca.crt fields to be used for External Secret
-// Store plugins
+// Store plugins.
 type TLSCertificateGenerator struct {
 	namespace           string
 	caSecretName        string
@@ -75,14 +74,14 @@ type TLSCertificateGenerator struct {
 // TLSCertificateGeneratorOption is used to configure TLSCertificateGenerator behavior.
 type TLSCertificateGeneratorOption func(*TLSCertificateGenerator)
 
-// TLSCertificateGeneratorWithLogger returns an TLSCertificateGeneratorOption that configures logger
+// TLSCertificateGeneratorWithLogger returns an TLSCertificateGeneratorOption that configures logger.
 func TLSCertificateGeneratorWithLogger(log logging.Logger) TLSCertificateGeneratorOption {
 	return func(g *TLSCertificateGenerator) {
 		g.log = log
 	}
 }
 
-// TLSCertificateGeneratorWithOwner returns an TLSCertificateGeneratorOption that sets owner reference
+// TLSCertificateGeneratorWithOwner returns an TLSCertificateGeneratorOption that sets owner reference.
 func TLSCertificateGeneratorWithOwner(owner []metav1.OwnerReference) TLSCertificateGeneratorOption {
 	return func(g *TLSCertificateGenerator) {
 		g.owner = owner
@@ -128,7 +127,9 @@ func (e *TLSCertificateGenerator) loadOrGenerateCA(ctx context.Context, kube cli
 		return nil, errors.Wrapf(err, errFmtGetTLSSecret, nn.Name)
 	}
 
+	create := true
 	if err == nil {
+		create = false
 		kd := caSecret.Data[corev1.TLSPrivateKeyKey]
 		cd := caSecret.Data[corev1.TLSCertKey]
 		if len(kd) != 0 && len(cd) != 0 {
@@ -157,13 +158,15 @@ func (e *TLSCertificateGenerator) loadOrGenerateCA(ctx context.Context, kube cli
 
 	caSecret.Name = nn.Name
 	caSecret.Namespace = nn.Namespace
-	_, err = controllerruntime.CreateOrUpdate(ctx, kube, caSecret, func() error {
-		caSecret.Data = map[string][]byte{
-			corev1.TLSCertKey:       caCrtByte,
-			corev1.TLSPrivateKeyKey: caKeyByte,
-		}
-		return nil
-	})
+	caSecret.Data = map[string][]byte{
+		corev1.TLSCertKey:       caCrtByte,
+		corev1.TLSPrivateKeyKey: caKeyByte,
+	}
+	if create {
+		err = kube.Create(ctx, caSecret)
+	} else {
+		err = kube.Update(ctx, caSecret)
+	}
 	if err != nil {
 		return nil, errors.Wrapf(err, errFmtCannotCreateOrUpdate, nn.Name)
 	}
@@ -179,7 +182,9 @@ func (e *TLSCertificateGenerator) ensureClientCertificate(ctx context.Context, k
 		return errors.Wrapf(err, errFmtGetTLSSecret, nn.Name)
 	}
 
+	create := true
 	if err == nil {
+		create = false
 		if len(sec.Data[corev1.TLSPrivateKeyKey]) != 0 || len(sec.Data[corev1.TLSCertKey]) != 0 || len(sec.Data[SecretKeyCACert]) != 0 {
 			e.log.Info("TLS secret contains client certificate.", "secret", nn.Name)
 			return nil
@@ -212,17 +217,18 @@ func (e *TLSCertificateGenerator) ensureClientCertificate(ctx context.Context, k
 	if e.owner != nil {
 		sec.OwnerReferences = e.owner
 	}
-	_, err = controllerruntime.CreateOrUpdate(ctx, kube, sec, func() error {
-		if sec.Data == nil {
-			sec.Data = make(map[string][]byte)
-		}
-		sec.Data[corev1.TLSCertKey] = certData
-		sec.Data[corev1.TLSPrivateKeyKey] = keyData
-		sec.Data[SecretKeyCACert] = signer.certificatePEM
+	if sec.Data == nil {
+		sec.Data = make(map[string][]byte)
+	}
+	sec.Data[corev1.TLSCertKey] = certData
+	sec.Data[corev1.TLSPrivateKeyKey] = keyData
+	sec.Data[SecretKeyCACert] = signer.certificatePEM
 
-		return nil
-	})
-
+	if create {
+		err = kube.Create(ctx, sec)
+	} else {
+		err = kube.Update(ctx, sec)
+	}
 	return errors.Wrapf(err, errFmtCannotCreateOrUpdate, nn.Name)
 }
 
@@ -234,7 +240,9 @@ func (e *TLSCertificateGenerator) ensureServerCertificate(ctx context.Context, k
 		return errors.Wrapf(err, errFmtGetTLSSecret, nn.Name)
 	}
 
+	create := true
 	if err == nil {
+		create = false
 		if len(sec.Data[corev1.TLSCertKey]) != 0 || len(sec.Data[corev1.TLSPrivateKeyKey]) != 0 || len(sec.Data[SecretKeyCACert]) != 0 {
 			e.log.Info("TLS secret contains server certificate.", "secret", nn.Name)
 			return nil
@@ -268,17 +276,18 @@ func (e *TLSCertificateGenerator) ensureServerCertificate(ctx context.Context, k
 	if e.owner != nil {
 		sec.OwnerReferences = e.owner
 	}
-	_, err = controllerruntime.CreateOrUpdate(ctx, kube, sec, func() error {
-		if sec.Data == nil {
-			sec.Data = make(map[string][]byte)
-		}
-		sec.Data[corev1.TLSCertKey] = certData
-		sec.Data[corev1.TLSPrivateKeyKey] = keyData
-		sec.Data[SecretKeyCACert] = signer.certificatePEM
+	if sec.Data == nil {
+		sec.Data = make(map[string][]byte)
+	}
+	sec.Data[corev1.TLSCertKey] = certData
+	sec.Data[corev1.TLSPrivateKeyKey] = keyData
+	sec.Data[SecretKeyCACert] = signer.certificatePEM
 
-		return nil
-	})
-
+	if create {
+		err = kube.Create(ctx, sec)
+	} else {
+		err = kube.Update(ctx, sec)
+	}
 	return errors.Wrapf(err, errFmtCannotCreateOrUpdate, nn.Name)
 }
 

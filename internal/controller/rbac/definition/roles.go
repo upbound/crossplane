@@ -53,6 +53,7 @@ const (
 	suffixFinalizers = "/finalizers"
 )
 
+//nolint:gochecknoglobals // We treat these as constants.
 var (
 	verbsEdit   = []string{rbacv1.VerbAll}
 	verbsView   = []string{"get", "list", "watch"}
@@ -110,8 +111,11 @@ func RenderClusterRoles(d *v1.CompositeResourceDefinition) []rbacv1.ClusterRole 
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{d.Spec.Group},
-				Resources: []string{d.Spec.Names.Plural},
-				Verbs:     verbsEdit,
+				Resources: []string{
+					d.Spec.Names.Plural,
+					d.Spec.Names.Plural + suffixStatus,
+				},
+				Verbs: verbsEdit,
 			},
 		},
 	}
@@ -129,8 +133,11 @@ func RenderClusterRoles(d *v1.CompositeResourceDefinition) []rbacv1.ClusterRole 
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{d.Spec.Group},
-				Resources: []string{d.Spec.Names.Plural},
-				Verbs:     verbsView,
+				Resources: []string{
+					d.Spec.Names.Plural,
+					d.Spec.Names.Plural + suffixStatus,
+				},
+				Verbs: verbsView,
 			},
 		},
 	}
@@ -147,8 +154,11 @@ func RenderClusterRoles(d *v1.CompositeResourceDefinition) []rbacv1.ClusterRole 
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{d.Spec.Group},
-				Resources: []string{d.Spec.Names.Plural},
-				Verbs:     verbsBrowse,
+				Resources: []string{
+					d.Spec.Names.Plural,
+					d.Spec.Names.Plural + suffixStatus,
+				},
+				Verbs: verbsBrowse,
 			},
 		},
 	}
@@ -175,14 +185,20 @@ func RenderClusterRoles(d *v1.CompositeResourceDefinition) []rbacv1.ClusterRole 
 
 		edit.Rules = append(edit.Rules, rbacv1.PolicyRule{
 			APIGroups: []string{d.Spec.Group},
-			Resources: []string{d.Spec.ClaimNames.Plural},
-			Verbs:     verbsEdit,
+			Resources: []string{
+				d.Spec.ClaimNames.Plural,
+				d.Spec.ClaimNames.Plural + suffixStatus,
+			},
+			Verbs: verbsEdit,
 		})
 
 		view.Rules = append(view.Rules, rbacv1.PolicyRule{
 			APIGroups: []string{d.Spec.Group},
-			Resources: []string{d.Spec.ClaimNames.Plural},
-			Verbs:     verbsView,
+			Resources: []string{
+				d.Spec.ClaimNames.Plural,
+				d.Spec.ClaimNames.Plural + suffixStatus,
+			},
+			Verbs: verbsView,
 		})
 
 		// The browse role only includes composite resources; not claims.

@@ -6,7 +6,7 @@ import (
 	"github.com/crossplane/crossplane/pkg/validation/internal/schema"
 )
 
-// sets all the defaults in the given schema
+// sets all the defaults in the given schema.
 func defaultMetadataSchema(in *apiextensions.JSONSchemaProps) *apiextensions.JSONSchemaProps {
 	out := in
 	if out == nil {
@@ -26,11 +26,13 @@ func defaultMetadataSchema(in *apiextensions.JSONSchemaProps) *apiextensions.JSO
 
 	return out
 }
+
 func defaultMetadataOnly(metadata *apiextensions.JSONSchemaProps) *apiextensions.JSONSchemaProps {
 	setDefaultType(metadata)
 	setDefaultProperty(metadata, "name", string(schema.KnownJSONTypeString))
 	setDefaultProperty(metadata, "namespace", string(schema.KnownJSONTypeString))
 	setDefaultProperty(metadata, "uid", string(schema.KnownJSONTypeString))
+	setDefaultProperty(metadata, "generateName", string(schema.KnownJSONTypeString))
 	setDefaultLabels(metadata)
 	setDefaultAnnotations(metadata)
 	return metadata

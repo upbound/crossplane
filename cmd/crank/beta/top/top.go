@@ -51,8 +51,8 @@ const (
 
 // Cmd represents the top command.
 type Cmd struct {
-	Summary   bool   `short:"s" name:"summary" help:"Adds summary header for all Crossplane pods."`
-	Namespace string `short:"n" name:"namespace" help:"Show pods from a specific namespace, defaults to crossplane-system." default:"crossplane-system"`
+	Summary   bool   `help:"Adds summary header for all Crossplane pods." name:"summary"                                                             short:"s"`
+	Namespace string `default:"crossplane-system"                         help:"Show pods from a specific namespace, defaults to crossplane-system." name:"namespace" short:"n"`
 }
 
 // Help returns help instructions for the top command.
@@ -101,7 +101,7 @@ func (r *defaultPrinterRow) String() string {
 }
 
 // Run runs the top command.
-func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyclo // TODO:(piotr1215) refactor to use dedicated functions
+func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error {
 	logger = logger.WithValues("cmd", "top")
 
 	logger.Debug("Tabwriter header created")
@@ -130,7 +130,6 @@ func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyc
 	ctx := context.Background()
 
 	pods, err := k8sClientset.CoreV1().Pods(c.Namespace).List(ctx, metav1.ListOptions{})
-
 	if err != nil {
 		return errors.Wrap(err, errFetchAllPods)
 	}
@@ -139,7 +138,7 @@ func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyc
 	logger.Debug("Fetched all Crossplane pods", "pods", crossplanePods, "namespace", c.Namespace)
 
 	if len(crossplanePods) == 0 {
-		fmt.Println("No Crossplane pods found in the namespace", c.Namespace)
+		_, _ = fmt.Fprintln(k.Stdout, "No Crossplane pods found in the namespace", c.Namespace)
 		return nil
 	}
 
@@ -158,9 +157,6 @@ func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyc
 		}
 	}
 
-	if err != nil {
-		return errors.Wrap(err, errGetPodMetrics)
-	}
 	logger.Debug("Added metrics to Crossplane pods")
 
 	sort.Slice(crossplanePods, func(i, j int) bool {
@@ -173,7 +169,7 @@ func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyc
 	if c.Summary {
 		printPodsSummary(k.Stdout, crossplanePods)
 		logger.Debug("Printed pods summary")
-		fmt.Println()
+		_, _ = fmt.Fprintln(k.Stdout)
 	}
 
 	if err := printPodsTable(k.Stdout, crossplanePods); err != nil {
@@ -231,7 +227,7 @@ func printPodsSummary(w io.Writer, pods []topMetrics) {
 	}
 
 	// Print summary directly to the provided writer
-	fmt.Fprintf(w, "Nr of Crossplane pods: %d\n", len(pods))
+	_, _ = fmt.Fprintf(w, "Nr of Crossplane pods: %d\n", len(pods))
 	// Sort categories alphabetically to ensure consistent output
 	categories := make([]string, 0, len(categoryCounts))
 	for category := range categoryCounts {
@@ -239,10 +235,10 @@ func printPodsSummary(w io.Writer, pods []topMetrics) {
 	}
 	sort.Strings(categories)
 	for _, category := range categories {
-		fmt.Fprintf(w, "%s: %d\n", capitalizeFirst(category), categoryCounts[category])
+		_, _ = fmt.Fprintf(w, "%s: %d\n", capitalizeFirst(category), categoryCounts[category])
 	}
-	fmt.Fprintf(w, "Memory: %s\n", fmt.Sprintf("%vMi", totalMemoryUsage.Value()/(1024*1024)))
-	fmt.Fprintf(w, "CPU(cores): %s\n", fmt.Sprintf("%vm", totalCPUUsage.MilliValue()))
+	_, _ = fmt.Fprintf(w, "Memory: %s\n", fmt.Sprintf("%vMi", totalMemoryUsage.Value()/(1024*1024)))
+	_, _ = fmt.Fprintf(w, "CPU(cores): %s\n", fmt.Sprintf("%vm", totalCPUUsage.MilliValue()))
 }
 
 func getCrossplanePods(pods []v1.Pod) []topMetrics {

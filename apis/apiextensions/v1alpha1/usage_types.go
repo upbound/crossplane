@@ -68,6 +68,9 @@ type UsageSpec struct {
 	// Reason is the reason for blocking deletion of the resource.
 	// +optional
 	Reason *string `json:"reason,omitempty"`
+	// ReplayDeletion will trigger a deletion on the used resource during the deletion of the usage itself, if it was attempted to be deleted at least once.
+	// +optional
+	ReplayDeletion *bool `json:"replayDeletion,omitempty"`
 }
 
 // UsageStatus defines the observed state of Usage.
@@ -76,6 +79,12 @@ type UsageStatus struct {
 }
 
 // A Usage defines a deletion blocking relationship between two resources.
+//
+// Usages prevent accidental deletion of a single resource or deletion of
+// resources with dependent resources.
+//
+// Read the Crossplane documentation for
+// [more information about Compositions](https://docs.crossplane.io/latest/concepts/usages).
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="DETAILS",type="string",JSONPath=".metadata.annotations.crossplane\\.io/usage-details"

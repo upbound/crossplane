@@ -24,21 +24,24 @@ import (
 type CompositionSpec struct {
 	// CompositeTypeRef specifies the type of composite resource that this
 	// composition is compatible with.
-	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	CompositeTypeRef TypeReference `json:"compositeTypeRef"`
 
 	// Mode controls what type or "mode" of Composition will be used.
 	//
-	// "Resources" (the default) indicates that a Composition uses what is
-	// commonly referred to as "Patch & Transform" or P&T composition. This mode
-	// of Composition uses an array of resources, each a template for a composed
-	// resource.
+	// "Pipeline" indicates that a Composition specifies a pipeline of
+	// Composition Functions, each of which is responsible for producing
+	// composed resources that Crossplane should create or update.
 	//
-	// "Pipeline" indicates that a Composition specifies a pipeline
-	// of Composition Functions, each of which is responsible for producing
-	// composed resources that Crossplane should create or update. THE PIPELINE
-	// MODE IS A BETA FEATURE. It is not honored if the relevant Crossplane
-	// feature flag is disabled.
+	// "Resources" indicates that a Composition uses what is commonly referred
+	// to as "Patch & Transform" or P&T composition. This mode of Composition
+	// uses an array of resources, each a template for a composed resource.
+	//
+	// All Compositions should use Pipeline mode. Resources mode is deprecated.
+	// Resources mode won't be removed in Crossplane 1.x, and will remain the
+	// default to avoid breaking legacy Compositions. However, it's no longer
+	// accepting new features, and only accepting security related bug fixes.
+	//
 	// +optional
 	// +kubebuilder:validation:Enum=Resources;Pipeline
 	// +kubebuilder:default=Resources
@@ -50,6 +53,9 @@ type CompositionSpec struct {
 	//
 	// PatchSets are only used by the "Resources" mode of Composition. They
 	// are ignored by other modes.
+	//
+	// Deprecated: Use Composition Functions instead.
+	//
 	// +optional
 	PatchSets []PatchSet `json:"patchSets,omitempty"`
 
@@ -66,6 +72,9 @@ type CompositionSpec struct {
 	//
 	// Resources are only used by the "Resources" mode of Composition. They are
 	// ignored by other modes.
+	//
+	// Deprecated: Use Composition Functions instead.
+	//
 	// +optional
 	Resources []ComposedTemplate `json:"resources,omitempty"`
 
@@ -75,10 +84,9 @@ type CompositionSpec struct {
 	//
 	// The Pipeline is only used by the "Pipeline" mode of Composition. It is
 	// ignored by other modes.
-	//
-	// THIS IS A BETA FIELD. It is not honored if the relevant Crossplane
-	// feature flag is disabled.
 	// +optional
+	// +listType=map
+	// +listMapKey=step
 	Pipeline []PipelineStep `json:"pipeline,omitempty"`
 
 	// WriteConnectionSecretsToNamespace specifies the namespace in which the
@@ -109,7 +117,11 @@ type CompositionSpec struct {
 // +genclient
 // +genclient:nonNamespaced
 
-// A Composition specifies how a composite resource should be composed.
+// A Composition defines a collection of managed resources or functions that
+// Crossplane uses to create and manage new composite resources.
+//
+// Read the Crossplane documentation for
+// [more information about Compositions](https://docs.crossplane.io/latest/concepts/compositions).
 // +kubebuilder:printcolumn:name="XR-KIND",type="string",JSONPath=".spec.compositeTypeRef.kind"
 // +kubebuilder:printcolumn:name="XR-APIVERSION",type="string",JSONPath=".spec.compositeTypeRef.apiVersion"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
