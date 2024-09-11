@@ -19,6 +19,7 @@ env:
   # credentials have been provided before trying to run steps that need them.
   DOCKER_USR: ${{ secrets.DOCKER_USR }}
   UPBOUND_MARKETPLACE_PUSH_ROBOT_USR: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
+  XPKG_ACCESS_ID: ${{ secrets.XPKG_ACCESS_ID }}
 
 jobs:
   check-diff:
@@ -397,9 +398,17 @@ jobs:
         uses: docker/login-action@e92390c5fb421da1463c202d546fed0ec5c39f20 # v3
         if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
         with:
-          registry: xpkg.upbound.io
+          registry: xpkg.upbound.io/upbound
           username: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
           password: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }}
+
+      - name: Login to Spaces Artifacts Registry
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3
+        if: env.XPKG_ACCESS_ID != ''
+        with:
+          registry: xpkg.upbound.io/spaces-artifacts
+          username: ${{ secrets.XPKG_ACCESS_ID }}
+          password: ${{ secrets.XPKG_TOKEN }}
 
       - name: Publish Artifacts to Marketplace, DockerHub
         run: make -j2 publish BRANCH_NAME=${GITHUB_REF##*/}
@@ -453,7 +462,7 @@ jobs:
 
       - name: Setup Buf
         uses: bufbuild/buf-setup-action@v1
-      
+
       - name: Lint Protocol Buffers
         uses: bufbuild/buf-lint-action@v1
         with:
@@ -474,7 +483,7 @@ jobs:
         with:
           input: apis
           against: "https://github.com/${GITHUB_REPOSITORY}.git#branch=${GITHUB_REF_NAME},subdir=apis"
-        
+
       - name: Push Protocol Buffers to Buf Schema Registry
         if: ${{ github.repository == 'crossplane/crossplane' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release-')) }}
         uses: bufbuild/buf-push-action@v1
