@@ -352,7 +352,8 @@ ci-version:
 ci-artifacts:
   BUILD +multiplatform-build \
     --CROSSPLANE_REPO=index.docker.io/upbound/crossplane \
-    --CROSSPLANE_REPO=xpkg.upbound.io/upbound/crossplane
+    --CROSSPLANE_REPO=xpkg.upbound.io/upbound/crossplane \
+    --CROSSPLANE_REPO=xpkg.upbound.io/spaces-artifacts/crossplane
 
 # ci-codeql-setup sets up CodeQL for the ci-codeql target.
 ci-codeql-setup:
