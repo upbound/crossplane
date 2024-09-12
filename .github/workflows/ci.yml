@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches:
-      - master
+      - main
       - release-*
   pull_request: {}
   workflow_dispatch: {}
@@ -402,6 +402,16 @@ jobs:
           username: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
           password: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }}
 
+      - name: Publish Artifacts to Marketplace, DockerHub
+        run: make -j2 publish BRANCH_NAME=${GITHUB_REF##*/}
+
+      - name: Promote Artifacts in DockerHub
+        if: github.ref == 'refs/heads/main' && env.DOCKER_USR != ''
+        run: make -j2 promote
+        env:
+          BRANCH_NAME: main
+          CHANNEL: main
+
       - name: Login to Spaces Artifacts Registry
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3
         if: env.XPKG_ACCESS_ID != ''
@@ -410,15 +420,18 @@ jobs:
           username: ${{ secrets.XPKG_ACCESS_ID }}
           password: ${{ secrets.XPKG_TOKEN }}
 
-      - name: Publish Artifacts to Marketplace, DockerHub
+      - name: Publish Artifacts to Spaces Artifacts Registry
         run: make -j2 publish BRANCH_NAME=${GITHUB_REF##*/}
+        env:
+          REGISTRY_ORGS: xpkg.upbound.io/spaces-artifacts
 
-      - name: Promote Artifacts in DockerHub
-        if: github.ref == 'refs/heads/master' && env.DOCKER_USR != ''
+      - name: Promote Artifacts in Spaces Artifacts Registry
+        if: github.ref == 'refs/heads/main' && env.DOCKER_USR != ''
         run: make -j2 promote
         env:
-          BRANCH_NAME: master
-          CHANNEL: master
+          REGISTRY_ORGS: xpkg.upbound.io/spaces-artifacts
+          BRANCH_NAME: main
+          CHANNEL: main
 
   fuzz-test:
     runs-on: ubuntu-22.04
@@ -468,13 +481,13 @@ jobs:
         with:
           input: apis
 
-      - name: Detect Breaking Changes in Protocol Buffers (Master Branch)
+      - name: Detect Breaking Changes in Protocol Buffers (Main Branch)
         uses: bufbuild/buf-breaking-action@a074e988ee34efcd4927079e79c611f428354c01 # v1
-        # We want to run this for the master branch, and PRs.
+        # We want to run this for the main branch, and PRs.
         if: ${{ ! startsWith(github.ref, 'refs/heads/release-') }}
         with:
           input: apis
-          against: "https://github.com/${GITHUB_REPOSITORY}.git#branch=master,subdir=apis"
+          against: "https://github.com/${GITHUB_REPOSITORY}.git#branch=main,subdir=apis"
 
       - name: Detect Breaking Changes in Protocol Buffers (Release Branch)
         uses: bufbuild/buf-breaking-action@a074e988ee34efcd4927079e79c611f428354c01 # v1
@@ -485,7 +498,7 @@ jobs:
           against: "https://github.com/${GITHUB_REPOSITORY}.git#branch=${GITHUB_REF_NAME},subdir=apis"
 
       - name: Push Protocol Buffers to Buf Schema Registry
-        if: ${{ github.repository == 'crossplane/crossplane' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release-')) }}
+        if: ${{ github.repository == 'crossplane/crossplane' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) }}
         uses: bufbuild/buf-push-action@v1
         with:
           input: apis
