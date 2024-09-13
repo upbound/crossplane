@@ -27,7 +27,6 @@ env:
   # credentials have been provided before trying to run steps that need them.
   DOCKER_USR: ${{ secrets.DOCKER_USR }}
   UPBOUND_MARKETPLACE_PUSH_ROBOT_USR: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
-  XPKG_ACCESS_ID: ${{ secrets.XPKG_ACCESS_ID }}
 
 jobs:
   promote-artifacts:
@@ -60,13 +59,3 @@ jobs:
           --secret DOCKER_USER=${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }} \
           --secret DOCKER_PASSWORD=${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }} \
           +ci-promote-image --CHANNEL=${{ inputs.channel }} --CROSSPLANE_VERSION=${{ inputs.version }} --CROSSPLANE_REPO=xpkg.upbound.io/upbound/crossplane
-
-      - name: Promote Image to xpkg.upbound.io/spaces-artifacts/crossplane:${{ inputs.channel }}
-        if: env.XPKG_ACCESS_ID != ''
-        run: |
-          earthly --strict \
-          --push \
-          --secret DOCKER_USER=${{ secrets.XPKG_ACCESS_ID }} \
-          --secret DOCKER_PASSWORD=${{ secrets.XPKG_TOKEN }} \
-          +ci-promote-image --CHANNEL=${{ inputs.channel }} --CROSSPLANE_VERSION=${{ inputs.version }} --CROSSPLANE_REPO=xpkg.upbound.io/spaces-artifacts/crossplane
-
