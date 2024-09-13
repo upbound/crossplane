@@ -20,7 +20,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aws/smithy-go/ptr"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	admv1 "k8s.io/api/admissionregistration/v1"
@@ -32,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
@@ -141,7 +141,7 @@ func TestAPIEstablisherEstablish(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
 							if s, ok := obj.(*corev1.Secret); ok {
 								(&corev1.Secret{
 									Data: map[string][]byte{
@@ -353,7 +353,7 @@ func TestAPIEstablisherEstablish(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
 							s := &corev1.Secret{}
 							s.DeepCopyInto(obj.(*corev1.Secret))
 							return nil
@@ -378,7 +378,7 @@ func TestAPIEstablisherEstablish(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
 							s := &corev1.Secret{}
 							s.DeepCopyInto(obj.(*corev1.Secret))
 							return nil
@@ -495,7 +495,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, _ client.Object) error {
 							return errBoom
 						},
 					},
@@ -524,7 +524,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, _ client.Object) error {
 							return kerrors.NewNotFound(schema.GroupResource{}, "")
 						},
 					},
@@ -553,7 +553,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
 							o := obj.(*unstructured.Unstructured)
 							o.SetOwnerReferences([]metav1.OwnerReference{
 								{
@@ -573,7 +573,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 							})
 							return nil
 						},
-						MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						MockUpdate: func(_ context.Context, _ client.Object, _ ...client.UpdateOption) error {
 							return errBoom
 						},
 					},
@@ -602,10 +602,10 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, _ client.Object) error {
 							return nil
 						},
-						MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						MockUpdate: func(_ context.Context, _ client.Object, _ ...client.UpdateOption) error {
 							return nil
 						},
 					},
@@ -625,7 +625,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
 							o := obj.(*unstructured.Unstructured)
 							o.SetOwnerReferences([]metav1.OwnerReference{
 								{
@@ -645,7 +645,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 							})
 							return nil
 						},
-						MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						MockUpdate: func(_ context.Context, _ client.Object, _ ...client.UpdateOption) error {
 							t.Errorf("should not have called update")
 							return nil
 						},
@@ -675,7 +675,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
 							o := obj.(*unstructured.Unstructured)
 							o.SetOwnerReferences([]metav1.OwnerReference{
 								{
@@ -688,7 +688,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 							})
 							return nil
 						},
-						MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						MockUpdate: func(_ context.Context, obj client.Object, _ ...client.UpdateOption) error {
 							o := obj.(*unstructured.Unstructured)
 							if len(o.GetOwnerReferences()) != 2 {
 								t.Errorf("expected 2 owner references, got %d", len(o.GetOwnerReferences()))
@@ -697,7 +697,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 							for _, ref := range o.GetOwnerReferences() {
 								if ref.Kind == "ProviderRevision" && ref.UID == "some-unique-uid-2312" {
 									found = true
-									if ptr.ToBool(ref.Controller) {
+									if ptr.Deref(ref.Controller, false) {
 										t.Errorf("expected controller to be false, got %t", *ref.Controller)
 									}
 								}
@@ -736,7 +736,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 			args: args{
 				est: &APIEstablisher{
 					client: &test.MockClient{
-						MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						MockGet: func(_ context.Context, _ client.ObjectKey, obj client.Object) error {
 							o := obj.(*unstructured.Unstructured)
 							o.SetOwnerReferences([]metav1.OwnerReference{
 								{
@@ -756,7 +756,7 @@ func TestAPIEstablisherReleaseObjects(t *testing.T) {
 							})
 							return nil
 						},
-						MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						MockUpdate: func(_ context.Context, obj client.Object, _ ...client.UpdateOption) error {
 							o := obj.(*unstructured.Unstructured)
 							if len(o.GetOwnerReferences()) != 2 {
 								t.Errorf("expected 2 owner references, got %d", len(o.GetOwnerReferences()))

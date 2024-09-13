@@ -18,6 +18,8 @@ package revision
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/Masterminds/semver"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -41,7 +43,7 @@ const (
 	errNotMeta                   = "meta type is not a valid package"
 	errGetOrCreateLock           = "cannot get or create lock"
 	errInitDAG                   = "cannot initialize dependency graph from the packages in the lock"
-	errFmtIncompatibleDependency = "incompatible dependencies: %+v"
+	errFmtIncompatibleDependency = "incompatible dependencies: %s"
 	errFmtMissingDependencies    = "missing dependencies: %+v"
 	errDependencyNotInGraph      = "dependency is not present in graph"
 	errDependencyNotLockPackage  = "dependency in graph is not a lock package"
@@ -70,7 +72,7 @@ func NewPackageDependencyManager(c client.Client, nd dag.NewDAGFn, t v1beta1.Pac
 }
 
 // Resolve resolves package dependencies.
-func (m *PackageDependencyManager) Resolve(ctx context.Context, pkg runtime.Object, pr v1.PackageRevision) (found, installed, invalid int, err error) { //nolint:gocyclo // TODO(negz): Can this be refactored for less complexity?
+func (m *PackageDependencyManager) Resolve(ctx context.Context, pkg runtime.Object, pr v1.PackageRevision) (found, installed, invalid int, err error) { //nolint:gocognit // TODO(negz): Can this be refactored for less complexity?
 	// If we are inactive, we don't need to resolve dependencies.
 	if pr.GetDesiredState() == v1.PackageRevisionInactive {
 		return 0, 0, 0, nil
@@ -133,6 +135,22 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, pkg runtime.Obje
 		Source:       lockRef,
 		Version:      prRef.Identifier(),
 		Dependencies: sources,
+	}
+
+	// Delete packages in lock with same name and distinct source
+	// This is a corner case when source is updated but image SHA is not (i.e. relocate same image
+	// to another registry)
+	for _, lp := range lock.Packages {
+		if self.Name == lp.Name && self.Type == lp.Type && self.Source != lp.Identifier() {
+			if err := m.RemoveSelf(ctx, pr); err != nil {
+				return found, installed, invalid, err
+			}
+			// refresh the lock to be in sync with the contents
+			if err = m.client.Get(ctx, types.NamespacedName{Name: lockName}, lock); err != nil {
+				return found, installed, invalid, err
+			}
+			break
+		}
 	}
 
 	prExists := false
@@ -207,12 +225,16 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, pkg runtime.Obje
 			return found, installed, invalid, err
 		}
 		if !c.Check(v) {
-			invalidDeps = append(invalidDeps, lp.Identifier())
+			s := fmt.Sprintf("existing package %s@%s", lp.Identifier(), lp.Version)
+			if dep.Constraints != "" {
+				s = fmt.Sprintf("%s is incompatible with constraint %s", s, strings.TrimSpace(dep.Constraints))
+			}
+			invalidDeps = append(invalidDeps, s)
 		}
 	}
 	invalid = len(invalidDeps)
 	if invalid > 0 {
-		return found, installed, invalid, errors.Errorf(errFmtIncompatibleDependency, invalidDeps)
+		return found, installed, invalid, errors.Errorf(errFmtIncompatibleDependency, strings.Join(invalidDeps, "; "))
 	}
 	return found, installed, invalid, nil
 }

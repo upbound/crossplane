@@ -22,8 +22,10 @@ import (
 	"github.com/crossplane/crossplane/internal/dag"
 )
 
-var _ dag.Node = &Dependency{}
-var _ dag.Node = &LockPackage{}
+var (
+	_ dag.Node = &Dependency{}
+	_ dag.Node = &LockPackage{}
+)
 
 // A PackageType is a type of package.
 type PackageType string
@@ -58,7 +60,6 @@ type LockPackage struct {
 func ToNodes(pkgs ...LockPackage) []dag.Node {
 	nodes := make([]dag.Node, len(pkgs))
 	for i, r := range pkgs {
-		r := r // Pin range variable so we can take its address.
 		nodes[i] = &r
 	}
 	return nodes
@@ -73,7 +74,6 @@ func (l *LockPackage) Identifier() string {
 func (l *LockPackage) Neighbors() []dag.Node {
 	nodes := make([]dag.Node, len(l.Dependencies))
 	for i, r := range l.Dependencies {
-		r := r // Pin range variable so we can take its address.
 		nodes[i] = &r
 	}
 	return nodes

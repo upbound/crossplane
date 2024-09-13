@@ -30,12 +30,12 @@ type CompositeResourceDefinitionSpec struct {
 	// Group specifies the API group of the defined composite resource.
 	// Composite resources are served under `/apis/<group>/...`. Must match the
 	// name of the XRD (in the form `<names.plural>.<group>`).
-	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	Group string `json:"group"`
 
 	// Names specifies the resource and kind names of the defined composite
 	// resource.
-	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	Names extv1.CustomResourceDefinitionNames `json:"names"`
 
 	// ClaimNames specifies the names of an optional composite resource claim.
@@ -46,8 +46,8 @@ type CompositeResourceDefinitionSpec struct {
 	// create, update, or delete a corresponding composite resource. You may add
 	// claim names to an existing CompositeResourceDefinition, but they cannot
 	// be changed or removed once they have been set.
-	// +immutable
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	ClaimNames *extv1.CustomResourceDefinitionNames `json:"claimNames,omitempty"`
 
 	// ConnectionSecretKeys is the list of keys that will be exposed to the end
@@ -70,7 +70,7 @@ type CompositeResourceDefinitionSpec struct {
 	// EnforcedCompositionRef refers to the Composition resource that will be used
 	// by all composite instances whose schema is defined by this definition.
 	// +optional
-	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	EnforcedCompositionRef *CompositionReference `json:"enforcedCompositionRef,omitempty"`
 
 	// DefaultCompositionUpdatePolicy is the policy used when updating composites after a new
@@ -177,7 +177,7 @@ type CompositeResourceValidation struct {
 	// OpenAPIV3Schema is the OpenAPI v3 schema to use for validation and
 	// pruning.
 	// +kubebuilder:pruning:PreserveUnknownFields
-	OpenAPIV3Schema runtime.RawExtension `json:"openAPIV3Schema,omitempty"`
+	OpenAPIV3Schema runtime.RawExtension `json:"openAPIV3Schema,omitempty"` //nolint:tagliatelle // False positive. Linter thinks it should be Apiv3, not APIV3.
 }
 
 // CompositeResourceDefinitionStatus shows the observed state of the definition.
@@ -212,9 +212,11 @@ type CompositeResourceDefinitionControllerStatus struct {
 // +genclient
 // +genclient:nonNamespaced
 
-// A CompositeResourceDefinition defines a new kind of composite infrastructure
-// resource. The new resource is composed of other composite or managed
-// infrastructure resources.
+// A CompositeResourceDefinition defines the schema for a new custom Kubernetes
+// API.
+//
+// Read the Crossplane documentation for
+// [more information about CustomResourceDefinitions](https://docs.crossplane.io/latest/concepts/composite-resource-definitions).
 // +kubebuilder:printcolumn:name="ESTABLISHED",type="string",JSONPath=".status.conditions[?(@.type=='Established')].status"
 // +kubebuilder:printcolumn:name="OFFERED",type="string",JSONPath=".status.conditions[?(@.type=='Offered')].status"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
@@ -239,44 +241,44 @@ type CompositeResourceDefinitionList struct {
 
 // GetCompositeGroupVersionKind returns the schema.GroupVersionKind of the CRD for
 // the composite resource this CompositeResourceDefinition defines.
-func (in CompositeResourceDefinition) GetCompositeGroupVersionKind() schema.GroupVersionKind {
+func (c CompositeResourceDefinition) GetCompositeGroupVersionKind() schema.GroupVersionKind {
 	v := ""
-	for _, vr := range in.Spec.Versions {
+	for _, vr := range c.Spec.Versions {
 		if vr.Referenceable {
 			v = vr.Name
 		}
 	}
 
-	return schema.GroupVersionKind{Group: in.Spec.Group, Version: v, Kind: in.Spec.Names.Kind}
+	return schema.GroupVersionKind{Group: c.Spec.Group, Version: v, Kind: c.Spec.Names.Kind}
 }
 
 // OffersClaim is true when a CompositeResourceDefinition offers a claim for the
 // composite resource it defines.
-func (in CompositeResourceDefinition) OffersClaim() bool {
-	return in.Spec.ClaimNames != nil
+func (c CompositeResourceDefinition) OffersClaim() bool {
+	return c.Spec.ClaimNames != nil
 }
 
 // GetClaimGroupVersionKind returns the schema.GroupVersionKind of the CRD for
 // the composite resource claim this CompositeResourceDefinition defines. An
 // empty GroupVersionKind is returned if the CompositeResourceDefinition does
 // not offer a claim.
-func (in CompositeResourceDefinition) GetClaimGroupVersionKind() schema.GroupVersionKind {
-	if !in.OffersClaim() {
+func (c CompositeResourceDefinition) GetClaimGroupVersionKind() schema.GroupVersionKind {
+	if !c.OffersClaim() {
 		return schema.GroupVersionKind{}
 	}
 
 	v := ""
-	for _, vr := range in.Spec.Versions {
+	for _, vr := range c.Spec.Versions {
 		if vr.Referenceable {
 			v = vr.Name
 		}
 	}
 
-	return schema.GroupVersionKind{Group: in.Spec.Group, Version: v, Kind: in.Spec.ClaimNames.Kind}
+	return schema.GroupVersionKind{Group: c.Spec.Group, Version: v, Kind: c.Spec.ClaimNames.Kind}
 }
 
 // GetConnectionSecretKeys returns the set of allowed keys to filter the connection
 // secret.
-func (in *CompositeResourceDefinition) GetConnectionSecretKeys() []string {
-	return in.Spec.ConnectionSecretKeys
+func (c *CompositeResourceDefinition) GetConnectionSecretKeys() []string {
+	return c.Spec.ConnectionSecretKeys
 }

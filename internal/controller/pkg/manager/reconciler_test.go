@@ -53,6 +53,7 @@ func NewMockRevisionFn(hash string, err error) func() (string, error) {
 		return hash, err
 	}
 }
+
 func (m *MockRevisioner) Revision(context.Context, v1.Package) (string, error) {
 	return m.MockRevision()
 }
@@ -489,7 +490,7 @@ func TestReconcile(t *testing.T) {
 								return nil
 							}),
 						},
-						Applicator: resource.ApplyFn(func(_ context.Context, o client.Object, _ ...resource.ApplyOption) error {
+						Applicator: resource.ApplyFn(func(_ context.Context, _ client.Object, _ ...resource.ApplyOption) error {
 							return errBoom
 						}),
 					},

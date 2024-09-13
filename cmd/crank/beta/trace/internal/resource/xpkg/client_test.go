@@ -24,7 +24,7 @@ import (
 )
 
 // TODO add more cases, fake client
-// Consider testing getPackageDeps instead to cover more
+// Consider testing getPackageDeps instead to cover more.
 func TestGetDependencyRef(t *testing.T) {
 	type args struct {
 		pkgType v1beta1.PackageType
@@ -145,7 +145,7 @@ func TestGetDependencyRef(t *testing.T) {
 				pkgType: v1beta1.FunctionPackageType,
 				pkg:     "example.com/function-1:v1.0.0",
 				client: &test.MockClient{
-					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+					MockGet: test.NewMockGetFn(nil, func(_ client.Object) error {
 						return kerrors.NewNotFound(schema.GroupResource{}, "whatever")
 					}),
 				},
@@ -161,7 +161,7 @@ func TestGetDependencyRef(t *testing.T) {
 			want: want{
 				err: nil,
 				ref: &v1.ObjectReference{
-					APIVersion: "pkg.crossplane.io/v1beta1",
+					APIVersion: "pkg.crossplane.io/v1",
 					Kind:       "Function",
 					Name:       "function-1",
 				},

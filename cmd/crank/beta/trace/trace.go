@@ -28,7 +28,7 @@ import (
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/restmapper"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
@@ -45,6 +45,7 @@ const (
 	errGetResource            = "cannot get requested resource"
 	errCliOutput              = "cannot print output"
 	errKubeConfig             = "failed to get kubeconfig"
+	errKubeNamespace          = "failed to get namespace from kubeconfig"
 	errInitKubeClient         = "cannot init kubeclient"
 	errGetDiscoveryClient     = "cannot get discovery client"
 	errGetMapping             = "cannot get mapping for resource"
@@ -58,16 +59,17 @@ const (
 // Cmd builds the trace tree for a Crossplane resource.
 type Cmd struct {
 	Resource string `arg:"" help:"Kind of the Crossplane resource, accepts the 'TYPE[.VERSION][.GROUP][/NAME]' format."`
-	Name     string `arg:"" optional:"" help:"Name of the Crossplane resource, can be passed as part of the resource too."`
+	Name     string `arg:"" help:"Name of the Crossplane resource, can be passed as part of the resource too."          optional:""`
 
 	// TODO(phisco): add support for all the usual kubectl flags; configFlags := genericclioptions.NewConfigFlags(true).AddFlags(...)
-	// TODO(phisco): move to namespace defaulting to "" and use the current context's namespace
-	Namespace                 string `short:"n" name:"namespace" help:"Namespace of the resource." default:"default"`
-	Output                    string `short:"o" name:"output" help:"Output format. One of: default, wide, json, dot." enum:"default,wide,json,dot" default:"default"`
-	ShowConnectionSecrets     bool   `short:"s" name:"show-connection-secrets" help:"Show connection secrets in the output."`
-	ShowPackageDependencies   string `name:"show-package-dependencies" help:"Show package dependencies in the output. One of: unique, all, none." enum:"unique,all,none" default:"unique"`
-	ShowPackageRevisions      string `name:"show-package-revisions" help:"Show package revisions in the output. One of: active, all, none." enum:"active,all,none" default:"active"`
-	ShowPackageRuntimeConfigs bool   `name:"show-package-runtime-configs" help:"Show package runtime configs in the output." default:"false"`
+	Context                   string `default:""                                    help:"Kubernetes context."                         name:"context"                                                             short:"c"`
+	Namespace                 string `default:""                                    help:"Namespace of the resource."                  name:"namespace"                                                           short:"n"`
+	Output                    string `default:"default"                             enum:"default,wide,json,dot"                       help:"Output format. One of: default, wide, json, dot."                    name:"output"                    short:"o"`
+	ShowConnectionSecrets     bool   `help:"Show connection secrets in the output." name:"show-connection-secrets"                     short:"s"`
+	ShowPackageDependencies   string `default:"unique"                              enum:"unique,all,none"                             help:"Show package dependencies in the output. One of: unique, all, none." name:"show-package-dependencies"`
+	ShowPackageRevisions      string `default:"active"                              enum:"active,all,none"                             help:"Show package revisions in the output. One of: active, all, none."    name:"show-package-revisions"`
+	ShowPackageRuntimeConfigs bool   `default:"false"                               help:"Show package runtime configs in the output." name:"show-package-runtime-configs"`
+	Concurrency               int    `default:"5"                                   help:"load concurrency"                            name:"concurrency"`
 }
 
 // Help returns help message for the trace command.
@@ -84,7 +86,8 @@ Examples:
   # Trace a MyKind resource (mykinds.example.org/v1alpha1) named 'my-res' in the namespace 'my-ns'
   crossplane beta trace mykind my-res -n my-ns
 
-  # Output wide format, showing full errors and condition messages
+  # Output wide format, showing full errors and condition messages, and other useful info 
+  # depending on the target type, e.g. composed resources names for composite resources or image used for packages
   crossplane beta trace mykind my-res -n my-ns -o wide
 
   # Show connection secrets in the output
@@ -102,7 +105,7 @@ Examples:
 }
 
 // Run runs the trace command.
-func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyclo // TODO(phisco): refactor
+func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error {
 	ctx := context.Background()
 	logger = logger.WithValues("Resource", c.Resource, "Name", c.Name)
 
@@ -113,10 +116,28 @@ func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyc
 	}
 	logger.Debug("Built printer", "output", c.Output)
 
-	kubeconfig, err := ctrl.GetConfig()
+	clientconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		&clientcmd.ConfigOverrides{CurrentContext: c.Context},
+	)
+
+	kubeconfig, err := clientconfig.ClientConfig()
 	if err != nil {
 		return errors.Wrap(err, errKubeConfig)
 	}
+
+	// NOTE(phisco): We used to get them set as part of
+	// https://github.com/kubernetes-sigs/controller-runtime/blob/2e9781e9fc6054387cf0901c70db56f0b0a63083/pkg/client/config/config.go#L96,
+	// this new approach doesn't set them, so we need to set them here to avoid
+	// being utterly slow.
+	// TODO(phisco): make this configurable.
+	if kubeconfig.QPS == 0 {
+		kubeconfig.QPS = 20
+	}
+	if kubeconfig.Burst == 0 {
+		kubeconfig.Burst = 30
+	}
+
 	logger.Debug("Found kubeconfig")
 
 	client, err := client.New(kubeconfig, client.Options{
@@ -155,10 +176,18 @@ func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyc
 		APIVersion: mapping.GroupVersionKind.GroupVersion().String(),
 		Name:       name,
 	}
-	if mapping.Scope.Name() == meta.RESTScopeNameNamespace && c.Namespace != "" {
-		logger.Debug("Requested resource is namespaced", "namespace", c.Namespace)
-		rootRef.Namespace = c.Namespace
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		namespace := c.Namespace
+		if namespace == "" {
+			namespace, _, err = clientconfig.Namespace()
+			if err != nil {
+				return errors.Wrap(err, errKubeNamespace)
+			}
+		}
+		logger.Debug("Requested resource is namespaced", "namespace", namespace)
+		rootRef.Namespace = namespace
 	}
+
 	logger.Debug("Getting resource tree", "rootRef", rootRef.String())
 	// Get client for k8s package
 	root := resource.GetResource(ctx, client, rootRef)
@@ -180,7 +209,10 @@ func (c *Cmd) Run(k *kong.Context, logger logging.Logger) error { //nolint:gocyc
 		}
 	default:
 		logger.Debug("Requested resource is not a package, assumed to be an XR, XRC or MR")
-		treeClient, err = xrm.NewClient(client, xrm.WithConnectionSecrets(c.ShowConnectionSecrets))
+		treeClient, err = xrm.NewClient(client,
+			xrm.WithConnectionSecrets(c.ShowConnectionSecrets),
+			xrm.WithConcurrency(c.Concurrency),
+		)
 		if err != nil {
 			return errors.Wrap(err, errInitKubeClient)
 		}

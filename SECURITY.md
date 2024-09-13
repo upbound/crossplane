@@ -38,7 +38,7 @@ To report a vulnerability, either:
 The reporter(s) can typically expect a response within 24 hours acknowledging
 the issue was received. If a response is not received within 24 hours, please
 reach out to any
-[maintainer](https://github.com/crossplane/crossplane/blob/master/OWNERS.md#maintainers)
+[maintainer](https://github.com/crossplane/crossplane/blob/main/OWNERS.md#maintainers)
 directly to confirm receipt of the issue.
 
 ### Report Content
@@ -85,7 +85,7 @@ and mentioned in the fixed versions' release notes.
 
 ## Supported Versions
 
-See [Crossplane's documentation](https://docs.crossplane.io/master/reference/release-cycle/)
+See [Crossplane's documentation](https://docs.crossplane.io/latest/learn/release-cycle/)
 for information on supported versions of crossplane. Any supported
 release branch may receive security updates. For any security issues discovered
 on older versions, non-core packages, or dependencies, please inform maintainers

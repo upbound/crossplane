@@ -66,7 +66,7 @@ const (
 	errGetUsed              = "cannot get used"
 	errAddOwnerToUsage      = "cannot update usage resource with owner ref"
 	errAddDetailsAnnotation = "cannot update usage resource with details annotation"
-	errAddInUseLabel        = "cannot add in use use label to the used resource"
+	errAddInUseLabel        = "cannot add in use label to the used resource"
 	errRemoveInUseLabel     = "cannot remove in use label from the used resource"
 	errAddFinalizer         = "cannot add finalizer"
 	errRemoveFinalizer      = "cannot remove finalizer"
@@ -86,6 +86,7 @@ const (
 	reasonRemoveInUseLabel event.Reason = "RemoveInUseLabel"
 	reasonAddFinalizer     event.Reason = "AddFinalizer"
 	reasonRemoveFinalizer  event.Reason = "RemoveFinalizer"
+	reasonReplayDeletion   event.Reason = "ReplayDeletion"
 
 	reasonUsageConfigured event.Reason = "UsageConfigured"
 	reasonWaitUsing       event.Reason = "WaitingUsingDeleted"
@@ -170,6 +171,12 @@ type usageResource struct {
 
 // NewReconciler returns a Reconciler of Usages.
 func NewReconciler(mgr manager.Manager, opts ...ReconcilerOption) *Reconciler {
+	// TODO(negz): Stop using this wrapper? It's only necessary if the client is
+	// backed by a cache, and at the time of writing the manager's client isn't.
+	// It's configured not to automatically cache unstructured objects. The
+	// wrapper is needed when caching because controller-runtime doesn't support
+	// caching types that satisfy runtime.Unstructured - it only supports the
+	// concrete *unstructured.Unstructured type.
 	kube := unstructured.NewClient(mgr.GetClient())
 
 	r := &Reconciler{
@@ -207,7 +214,7 @@ type Reconciler struct {
 
 // Reconcile a Usage resource by resolving its selectors, defining ownership
 // relationship, adding a finalizer and handling proper deletion.
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocyclo // Reconcilers are typically complex.
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocognit // Reconcilers are typically complex.
 	log := r.log.WithValues("request", req)
 	ctx, cancel := context.WithTimeout(ctx, reconcileTimeout)
 	defer cancel()
@@ -313,6 +320,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 					r.record.Event(u, event.Warning(reasonRemoveInUseLabel, err))
 					return reconcile.Result{}, err
 				}
+			}
+		}
+
+		if u.Spec.ReplayDeletion != nil && *u.Spec.ReplayDeletion && used.GetAnnotations() != nil {
+			if policy, ok := used.GetAnnotations()[usage.AnnotationKeyDeletionAttempt]; ok {
+				// We have already recorded a deletion attempt and want to replay deletion, let's delete the used resource.
+
+				//nolint:contextcheck // We cannot use the context from the reconcile function since it will be cancelled after the reconciliation.
+				go func() {
+					// We do the deletion async and after some delay to make sure the usage is deleted before the
+					// deletion attempt. We remove the finalizer on this Usage right below, so, we know it will disappear
+					// very soon.
+					time.Sleep(2 * time.Second)
+					log.Info("Replaying deletion of the used resource", "apiVersion", used.GetAPIVersion(), "kind", used.GetKind(), "name", used.GetName(), "policy", policy)
+					if err = r.client.Delete(context.Background(), used, client.PropagationPolicy(policy)); err != nil {
+						log.Info("Error when replaying deletion of the used resource", "apiVersion", used.GetAPIVersion(), "kind", used.GetKind(), "name", used.GetName(), "err", err)
+					}
+				}()
 			}
 		}
 
@@ -444,7 +469,7 @@ func detailsAnnotation(u *v1alpha1.Usage) string {
 // composite controller since otherwise we lose the owner reference this
 // controller puts on the Usage.
 func RespectOwnerRefs() xpresource.ApplyOption {
-	return func(ctx context.Context, current, desired runtime.Object) error {
+	return func(_ context.Context, current, desired runtime.Object) error {
 		cu, ok := current.(*composed.Unstructured)
 		if !ok || cu.GetObjectKind().GroupVersionKind() != v1alpha1.UsageGroupVersionKind {
 			return nil
@@ -452,6 +477,7 @@ func RespectOwnerRefs() xpresource.ApplyOption {
 		// This is a Usage resource, so we need to respect existing owner
 		// references in case it has any.
 		if len(cu.GetOwnerReferences()) > 0 {
+			//nolint:forcetypeassert // This will always be a metav1.Object.
 			desired.(metav1.Object).SetOwnerReferences(cu.GetOwnerReferences())
 		}
 		return nil

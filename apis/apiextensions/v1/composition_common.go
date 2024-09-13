@@ -35,7 +35,7 @@ import (
 	into composition_revision_types.go.
 */
 
-// A CompositionMode determines what mode of Composition is used
+// A CompositionMode determines what mode of Composition is used.
 type CompositionMode string
 
 const (
@@ -48,9 +48,6 @@ const (
 	// CompositionModePipeline indicates that a Composition specifies a pipeline
 	// of Composition Functions, each of which is responsible for producing
 	// composed resources that Crossplane should create or update.
-	//
-	// THIS IS A BETA FEATURE. It is not honored if the relevant Crossplane
-	// feature flag is disabled.
 	CompositionModePipeline CompositionMode = "Pipeline"
 )
 
@@ -63,7 +60,7 @@ type TypeReference struct {
 	Kind string `json:"kind"`
 }
 
-// TypeReferenceTo returns a reference to the supplied GroupVersionKind
+// TypeReferenceTo returns a reference to the supplied GroupVersionKind.
 func TypeReferenceTo(gvk schema.GroupVersionKind) TypeReference {
 	return TypeReference{APIVersion: gvk.GroupVersion().String(), Kind: gvk.Kind}
 }
@@ -146,7 +143,7 @@ func (t *ReadinessCheckType) IsValid() bool {
 }
 
 // ReadinessCheck is used to indicate how to tell whether a resource is ready
-// for consumption
+// for consumption.
 type ReadinessCheck struct {
 	// TODO(negz): Optional fields should be nil in the next version of this
 	// API. How would we know if we actually wanted to match the empty string,
@@ -174,7 +171,7 @@ type ReadinessCheck struct {
 }
 
 // MatchConditionReadinessCheck is used to indicate how to tell whether a resource is ready
-// for consumption
+// for consumption.
 type MatchConditionReadinessCheck struct {
 	// Type indicates the type of condition you'd like to use.
 	// +kubebuilder:default="Ready"
@@ -200,7 +197,7 @@ func (m *MatchConditionReadinessCheck) Validate() *field.Error {
 }
 
 // Validate checks if the readiness check is logically valid.
-func (r *ReadinessCheck) Validate() *field.Error { //nolint:gocyclo // This function is not that complex, just a switch
+func (r *ReadinessCheck) Validate() *field.Error {
 	if !r.Type.IsValid() {
 		return field.Invalid(field.NewPath("type"), string(r.Type), "unknown readiness check type")
 	}
@@ -298,6 +295,12 @@ type PipelineStep struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:EmbeddedResource
 	Input *runtime.RawExtension `json:"input,omitempty"`
+
+	// Credentials are optional credentials that the Composition Function needs.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	Credentials []FunctionCredentials `json:"credentials,omitempty"`
 }
 
 // A FunctionReference references a Composition Function that may be used in a
@@ -306,6 +309,36 @@ type FunctionReference struct {
 	// Name of the referenced Function.
 	Name string `json:"name"`
 }
+
+// FunctionCredentials are optional credentials that a Composition Function
+// needs to run.
+type FunctionCredentials struct {
+	// Name of this set of credentials.
+	Name string `json:"name"`
+
+	// Source of the function credentials.
+	// +kubebuilder:validation:Enum=None;Secret
+	Source FunctionCredentialsSource `json:"source"`
+
+	// A SecretRef is a reference to a secret containing credentials that should
+	// be supplied to the function.
+	// +optional
+	SecretRef *xpv1.SecretReference `json:"secretRef,omitempty"`
+}
+
+// A FunctionCredentialsSource is a source from which Composition Function
+// credentials may be acquired.
+type FunctionCredentialsSource string
+
+const (
+	// FunctionCredentialsSourceNone indicates that a function does not require
+	// credentials.
+	FunctionCredentialsSourceNone FunctionCredentialsSource = "None"
+
+	// FunctionCredentialsSourceSecret indicates that a function should acquire
+	// credentials from a secret.
+	FunctionCredentialsSourceSecret FunctionCredentialsSource = "Secret"
+)
 
 // A StoreConfigReference references a secret store config that may be used to
 // write connection details.

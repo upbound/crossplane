@@ -32,7 +32,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
 
@@ -41,14 +40,14 @@ import (
 	"github.com/crossplane/crossplane/internal/names"
 )
 
-// Error strings
+// Error strings.
 const (
-	errGetComposed   = "cannot get composed resource"
-	errGCComposed    = "cannot garbage collect composed resource"
-	errApplyComposed = "cannot apply composed resource"
-	errFetchDetails  = "cannot fetch connection details"
-	errInline        = "cannot inline Composition patch sets"
+	errGetComposed  = "cannot get composed resource"
+	errGCComposed   = "cannot garbage collect composed resource"
+	errFetchDetails = "cannot fetch connection details"
+	errInline       = "cannot inline Composition patch sets"
 
+	errFmtApplyComposed              = "cannot apply composed resource %q"
 	errFmtPatchEnvironment           = "cannot apply environment patch at index %d"
 	errFmtParseBase                  = "cannot parse base template of composed resource %q"
 	errFmtRenderFromCompositePatches = "cannot render FromComposite or environment patches for composed resource %q"
@@ -126,10 +125,6 @@ type PTComposer struct {
 // NewPTComposer returns a Composer that composes resources using Patch and
 // Transform (P&T) Composition - a Composition's bases, patches, and transforms.
 func NewPTComposer(kube client.Client, o ...PTComposerOption) *PTComposer {
-	// TODO(negz): Can we avoid double-wrapping if the supplied client is
-	// already wrapped? Or just do away with unstructured.NewClient completely?
-	kube = unstructured.NewClient(kube)
-
 	c := &PTComposer{
 		client: resource.ClientApplicator{Client: kube, Applicator: resource.NewAPIPatchingApplicator(kube)},
 
@@ -159,7 +154,7 @@ func NewPTComposer(kube client.Client, o ...PTComposerOption) *PTComposer {
 //  3. Apply all composed resources that rendered successfully.
 //  4. Observe the readiness and connection details of all composed resources
 //     that rendered successfully.
-func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, req CompositionRequest) (CompositionResult, error) { //nolint:gocyclo // Breaking this up doesn't seem worth yet more layers of abstraction.
+func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, req CompositionRequest) (CompositionResult, error) { //nolint:gocognit // Breaking this up doesn't seem worth yet more layers of abstraction.
 	// Inline PatchSets before composing resources.
 	ct, err := ComposedTemplates(req.Revision.Spec.PatchSets, req.Revision.Spec.Resources)
 	if err != nil {
@@ -188,7 +183,7 @@ func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, re
 		}
 	}
 
-	events := make([]event.Event, 0)
+	events := make([]TargetedEvent, 0)
 
 	// We optimistically render all composed resources that we are able to with
 	// the expectation that any that we fail to render will subsequently have
@@ -218,17 +213,26 @@ func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, re
 
 		rendered := true
 		if err := RenderFromCompositeAndEnvironmentPatches(r, xr, req.Environment, ta.Template.Patches); err != nil {
-			events = append(events, event.Warning(reasonCompose, errors.Wrapf(err, errFmtRenderFromCompositePatches, name)))
+			events = append(events, TargetedEvent{
+				Event:  event.Warning(reasonCompose, errors.Wrapf(err, errFmtRenderFromCompositePatches, name)),
+				Target: CompositionTargetComposite,
+			})
 			rendered = false
 		}
 
 		if err := RenderComposedResourceMetadata(r, xr, ResourceName(ptr.Deref(ta.Template.Name, ""))); err != nil {
-			events = append(events, event.Warning(reasonCompose, errors.Wrapf(err, errFmtRenderMetadata, name)))
+			events = append(events, TargetedEvent{
+				Event:  event.Warning(reasonCompose, errors.Wrapf(err, errFmtRenderMetadata, name)),
+				Target: CompositionTargetComposite,
+			})
 			rendered = false
 		}
 
 		if err := c.composed.GenerateName(ctx, r); err != nil {
-			events = append(events, event.Warning(reasonCompose, errors.Wrapf(err, errFmtGenerateName, name)))
+			events = append(events, TargetedEvent{
+				Event:  event.Warning(reasonCompose, errors.Wrapf(err, errFmtGenerateName, name)),
+				Target: CompositionTargetComposite,
+			})
 			rendered = false
 		}
 
@@ -273,10 +277,28 @@ func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, re
 		o := []resource.ApplyOption{resource.MustBeControllableBy(xr.GetUID()), usage.RespectOwnerRefs()}
 		o = append(o, mergeOptions(filterPatches(t.Patches, patchTypesFromXR()...))...)
 		if err := c.client.Apply(ctx, cd, o...); err != nil {
+			if kerrors.IsInvalid(err) {
+				// We tried applying an invalid resource, we can't tell whether
+				// this means the resource will never be valid or it will if we
+				// run again the composition after some other resource is
+				// created or updated successfully. So, we emit a warning event
+				// and move on.
+				events = append(events, TargetedEvent{
+					Event:  event.Warning(reasonCompose, errors.Wrapf(err, errFmtApplyComposed, ptr.Deref(t.Name, fmt.Sprintf("%d", i+1)))),
+					Target: CompositionTargetComposite,
+				})
+				// We unset the cd here so that we don't try to observe it
+				// later. This will also mean we report it as not ready and not
+				// synced. Resulting in the XR being reported as not ready nor
+				// synced too.
+				cds[i] = nil
+				continue
+			}
+
 			// TODO(negz): Include the template name (if any) in this error.
 			// Including the rendered resource's kind may help too (e.g. if the
 			// template is anonymous).
-			return CompositionResult{}, errors.Wrap(err, errApplyComposed)
+			return CompositionResult{}, errors.Wrapf(err, errFmtApplyComposed, ptr.Deref(t.Name, fmt.Sprintf("%d", i+1)))
 		}
 	}
 
@@ -298,7 +320,7 @@ func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, re
 		// to observe it. We still want to return it to the Reconciler so that
 		// it knows that this desired composed resource is not ready.
 		if cd == nil {
-			resources[i] = ComposedResource{ResourceName: name, Ready: false}
+			resources[i] = ComposedResource{ResourceName: name, Synced: false, Ready: false}
 			continue
 		}
 
@@ -328,7 +350,7 @@ func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, re
 			return CompositionResult{}, errors.Wrapf(err, errFmtCheckReadiness, name)
 		}
 
-		resources[i] = ComposedResource{ResourceName: name, Ready: ready}
+		resources[i] = ComposedResource{ResourceName: name, Ready: ready, Synced: true}
 	}
 
 	// Call Apply so that we do not just replace fields on existing XR but
@@ -344,7 +366,7 @@ func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, re
 	// be rejected by the API server. This will trigger an immediate requeue,
 	// and we'll proceed to update the status as soon as there are no changes to
 	// be made to the spec.
-	objCopy := xr.DeepCopyObject().(client.Object)
+	objCopy := xr.DeepCopy()
 	if err := c.client.Apply(ctx, objCopy, mergeOptions(toXRPatchesFromTAs(tas))...); err != nil {
 		return CompositionResult{}, errors.Wrap(err, errUpdate)
 	}
@@ -354,7 +376,7 @@ func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, re
 
 // toXRPatchesFromTAs selects patches defined in composed templates,
 // whose type is one of the XR-targeting patches
-// (e.g. v1.PatchTypeToCompositeFieldPath or v1.PatchTypeCombineToComposite)
+// (e.g. v1.PatchTypeToCompositeFieldPath or v1.PatchTypeCombineToComposite).
 func toXRPatchesFromTAs(tas []TemplateAssociation) []v1.Patch {
 	filtered := make([]v1.Patch, 0, len(tas))
 	for _, ta := range tas {
@@ -364,7 +386,7 @@ func toXRPatchesFromTAs(tas []TemplateAssociation) []v1.Patch {
 	return filtered
 }
 
-// filterPatches selects patches whose type belong to the list onlyTypes
+// filterPatches selects patches whose type belong to the list onlyTypes.
 func filterPatches(pas []v1.Patch, onlyTypes ...v1.PatchType) []v1.Patch {
 	filtered := make([]v1.Patch, 0, len(pas))
 	include := make(map[v1.PatchType]bool)
@@ -401,7 +423,7 @@ func AssociateByOrder(t []v1.ComposedTemplate, r []corev1.ObjectReference) []Tem
 		j = len(r)
 	}
 
-	for i := 0; i < j; i++ {
+	for i := range j {
 		a[i].Reference = r[i]
 	}
 
@@ -410,7 +432,7 @@ func AssociateByOrder(t []v1.ComposedTemplate, r []corev1.ObjectReference) []Tem
 
 // A CompositionTemplateAssociator returns an array of template associations.
 type CompositionTemplateAssociator interface {
-	AssociateTemplates(context.Context, resource.Composite, []v1.ComposedTemplate) ([]TemplateAssociation, error)
+	AssociateTemplates(ctx context.Context, xr resource.Composite, cts []v1.ComposedTemplate) ([]TemplateAssociation, error)
 }
 
 // A CompositionTemplateAssociatorFn returns an array of template associations.
@@ -439,7 +461,7 @@ func NewGarbageCollectingAssociator(c client.Client) *GarbageCollectingAssociato
 }
 
 // AssociateTemplates with composed resources.
-func (a *GarbageCollectingAssociator) AssociateTemplates(ctx context.Context, cr resource.Composite, ct []v1.ComposedTemplate) ([]TemplateAssociation, error) { //nolint:gocyclo // Only slightly over (13).
+func (a *GarbageCollectingAssociator) AssociateTemplates(ctx context.Context, cr resource.Composite, ct []v1.ComposedTemplate) ([]TemplateAssociation, error) {
 	templates := map[ResourceName]int{}
 	for i, t := range ct {
 		if t.Name == nil {
@@ -494,9 +516,17 @@ func (a *GarbageCollectingAssociator) AssociateTemplates(ctx context.Context, cr
 			continue
 		}
 
-		// We want to garbage collect this resource, but we don't control it.
-		if c := metav1.GetControllerOf(cd); c == nil || c.UID != cr.GetUID() {
-			continue
+		// Don't garbage collect composed resources that someone else controls.
+		//
+		// We do garbage collect composed resources that no-one controls. If a
+		// composed resource appears in observed (i.e. appears in the XR's
+		// spec.resourceRefs) but doesn't have a controller ref, most likely we
+		// created it but its controller ref was stripped. In this situation it
+		// would be permissible for us to adopt the composed resource by setting
+		// our XR as the controller ref, then delete it. So we may as well just
+		// go straight to deleting it.
+		if c := metav1.GetControllerOf(cd); c != nil && c.UID != cr.GetUID() {
+			return nil, errors.Errorf(errFmtControllerMismatch, name, c.Kind, c.Name)
 		}
 
 		// This existing resource does not correspond to an extant template. It

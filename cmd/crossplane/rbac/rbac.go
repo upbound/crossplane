@@ -18,7 +18,6 @@ limitations under the License.
 package rbac
 
 import (
-	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -37,26 +36,13 @@ import (
 	"github.com/crossplane/crossplane/internal/xpkg"
 )
 
-// Available RBAC management policies.
-const (
-	ManagementPolicyAll   = string(rbaccontroller.ManagementPolicyAll)
-	ManagementPolicyBasic = string(rbaccontroller.ManagementPolicyBasic)
-)
-
 // KongVars represent the kong variables associated with the CLI parser
 // required for the RBAC enum interpolation.
-var KongVars = kong.Vars{
-	"rbac_manage_default_var": ManagementPolicyBasic,
-	"rbac_manage_enum_var": strings.Join(
-		[]string{
-			ManagementPolicyAll,
-			ManagementPolicyBasic,
-		},
-		", "),
+var KongVars = kong.Vars{ //nolint:gochecknoglobals // We treat these as constants.
 	"rbac_default_registry": xpkg.DefaultRegistry,
 }
 
-// Command runs the crossplane RBAC controllers
+// Command runs the crossplane RBAC controllers.
 type Command struct {
 	Start startCommand `cmd:"" help:"Start Crossplane RBAC controllers."`
 	Init  initCommand  `cmd:"" help:"Initialize RBAC Manager."`
@@ -70,28 +56,19 @@ func (c *Command) Run() error {
 }
 
 type startCommand struct {
-	Profile string `placeholder:"host:port" help:"Serve runtime profiling data via HTTP at /debug/pprof."`
+	Profile string `help:"Serve runtime profiling data via HTTP at /debug/pprof." placeholder:"host:port"`
 
-	ProviderClusterRole string `name:"provider-clusterrole" help:"A ClusterRole enumerating the permissions provider packages may request."`
-	LeaderElection      bool   `name:"leader-election" short:"l" help:"Use leader election for the controller manager." env:"LEADER_ELECTION"`
-	Registry            string `short:"r" help:"Default registry used to fetch packages when not specified in tag." default:"${rbac_default_registry}" env:"REGISTRY"`
+	ProviderClusterRole string `help:"A ClusterRole enumerating the permissions provider packages may request." name:"provider-clusterrole"`
+	LeaderElection      bool   `env:"LEADER_ELECTION"                                                           help:"Use leader election for the controller manager." name:"leader-election"                                                    short:"l"`
+	Registry            string `default:"${rbac_default_registry}"                                              env:"REGISTRY"                                         help:"Default registry used to fetch packages when not specified in tag." short:"r"`
 
-	ManagementPolicy           string `name:"manage" short:"m" hidden:""`
-	DeprecatedManagementPolicy string `name:"deprecated-manage" hidden:"" default:"${rbac_manage_default_var}" enum:"${rbac_manage_enum_var}"`
-
-	SyncInterval     time.Duration `short:"s" help:"How often all resources will be double-checked for drift from the desired state." default:"1h"`
-	PollInterval     time.Duration `help:"How often individual resources will be checked for drift from the desired state." default:"1m"`
-	MaxReconcileRate int           `help:"The global maximum rate per second at which resources may checked for drift from the desired state." default:"10"`
+	SyncInterval     time.Duration `default:"1h" help:"How often all resources will be double-checked for drift from the desired state."                    short:"s"`
+	PollInterval     time.Duration `default:"1m" help:"How often individual resources will be checked for drift from the desired state."`
+	MaxReconcileRate int           `default:"10" help:"The global maximum rate per second at which resources may checked for drift from the desired state."`
 }
 
 // Run the RBAC manager.
 func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error {
-	if c.ManagementPolicy != "" {
-		return errors.New("--manage is deprecated, you can use --deprecated-manage until it is removed: see https://github.com/crossplane/crossplane/issues/5227")
-	}
-
-	log.Debug("Starting", "policy", c.DeprecatedManagementPolicy)
-
 	cfg, err := ctrl.GetConfig()
 	if err != nil {
 		return errors.Wrap(err, "cannot get config")
@@ -119,7 +96,6 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error {
 			GlobalRateLimiter:       ratelimiter.NewGlobal(c.MaxReconcileRate),
 		},
 		AllowClusterRole: c.ProviderClusterRole,
-		ManagementPolicy: rbaccontroller.ManagementPolicy(c.DeprecatedManagementPolicy),
 		DefaultRegistry:  c.Registry,
 	}
 

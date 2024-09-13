@@ -163,7 +163,7 @@ func NewReconciler(mgr manager.Manager, opts ...ReconcilerOption) *Reconciler {
 }
 
 // Reconcile package revision.
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocyclo // Reconcilers are complex. Be wary of adding more.
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := r.log.WithValues("request", req)
 	log.Debug("Reconciling")
 
@@ -287,7 +287,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	case v1beta1.ProviderPackageType:
 		pack = &v1.Provider{}
 	case v1beta1.FunctionPackageType:
-		pack = &v1beta1.Function{}
+		pack = &v1.Function{}
 	default:
 		log.Debug(errInvalidPackageType)
 		return reconcile.Result{Requeue: false}, nil

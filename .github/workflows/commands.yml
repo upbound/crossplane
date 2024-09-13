@@ -21,13 +21,34 @@ jobs:
         permission-level: write
 
     - name: Checkout
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
       with:
         fetch-depth: 0
 
     - name: Open Backport PR
-      uses: zeebe-io/backport-action@e8161d6a0dbfa2651b7daa76cbb75bc7c925bbf3 # v2.4.1
+      uses: zeebe-io/backport-action@ef20d86abccbac3ee3a73cb2efbdc06344c390e5 # v2.5.0
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         github_workspace: ${{ github.workspace }}
         version: v0.0.4
+
+  fresh:
+    runs-on: ubuntu-22.04
+    if: startsWith(github.event.comment.body, '/fresh')
+
+    steps:
+    - name: Extract Command
+      id: command
+      uses: xt0rted/slash-command-action@bf51f8f5f4ea3d58abc7eca58f77104182b23e88 # v2
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        command: fresh
+        reaction: "true"
+        reaction-type: "eyes"
+        allow-edits: "false"
+        permission-level: read
+    - name: Handle Command
+      uses: actions-ecosystem/action-remove-labels@2ce5d41b4b6aa8503e285553f75ed56e0a40bae0 # v1
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        labels: stale

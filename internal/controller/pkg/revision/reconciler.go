@@ -46,7 +46,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
-	pkgmetav1beta1 "github.com/crossplane/crossplane/apis/pkg/meta/v1beta1"
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
 	"github.com/crossplane/crossplane/apis/pkg/v1alpha1"
 	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
@@ -59,7 +58,7 @@ import (
 
 const (
 	reconcileTimeout = 3 * time.Minute
-	// the max size of a package parsed by the parser
+	// the max size of a package parsed by the parser.
 	maxPackageSize = 200 << 20 // 100 MB
 )
 
@@ -381,8 +380,8 @@ func SetupConfigurationRevision(mgr ctrl.Manager, o controller.Options) error {
 
 // SetupFunctionRevision adds a controller that reconciles FunctionRevisions.
 func SetupFunctionRevision(mgr ctrl.Manager, o controller.Options) error {
-	name := "packages/" + strings.ToLower(v1beta1.FunctionRevisionGroupKind)
-	nr := func() v1.PackageRevision { return &v1beta1.FunctionRevision{} }
+	name := "packages/" + strings.ToLower(v1.FunctionRevisionGroupKind)
+	nr := func() v1.PackageRevision { return &v1.FunctionRevision{} }
 
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
@@ -404,7 +403,7 @@ func SetupFunctionRevision(mgr ctrl.Manager, o controller.Options) error {
 
 	cb := ctrl.NewControllerManagedBy(mgr).
 		Named(name).
-		For(&v1beta1.FunctionRevision{}).
+		For(&v1.FunctionRevision{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Secret{}).
@@ -444,7 +443,6 @@ func SetupFunctionRevision(mgr ctrl.Manager, o controller.Options) error {
 
 // NewReconciler creates a new package revision reconciler.
 func NewReconciler(mgr manager.Manager, opts ...ReconcilerOption) *Reconciler {
-
 	r := &Reconciler{
 		client:    mgr.GetClient(),
 		cache:     xpkg.NewNopCache(),
@@ -465,7 +463,7 @@ func NewReconciler(mgr manager.Manager, opts ...ReconcilerOption) *Reconciler {
 }
 
 // Reconcile package revision.
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocyclo // Reconcilers are often very complex.
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocognit // Reconcilers are often very complex.
 	log := r.log.WithValues("request", req)
 	log.Debug("Reconciling")
 
@@ -549,9 +547,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	var runtimeManifestBuilder ManifestBuilder
-	if r.runtimeHook != nil {
-		pwr := pr.(v1.PackageRevisionWithRuntime)
-
+	pwr, hasRuntime := pr.(v1.PackageRevisionWithRuntime)
+	if hasRuntime && r.runtimeHook != nil {
 		opts, err := r.runtimeManifestBuilderOptions(ctx, pwr)
 		if err != nil {
 			log.Debug(errManifestBuilderOptions, "error", err)
@@ -742,9 +739,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, err
 	}
 
-	pkgMeta, _ := xpkg.TryConvert(pkg.GetMeta()[0], &pkgmetav1.Provider{}, &pkgmetav1.Configuration{}, &pkgmetav1beta1.Function{})
+	pkgMeta, _ := xpkg.TryConvert(pkg.GetMeta()[0], &pkgmetav1.Provider{}, &pkgmetav1.Configuration{}, &pkgmetav1.Function{})
 
-	pmo := pkgMeta.(metav1.Object)
+	pmo := pkgMeta.(metav1.Object) //nolint:forcetypeassert // Will always be metav1.Object.
 	meta.AddLabels(pr, pmo.GetLabels())
 	meta.AddAnnotations(pr, pmo.GetAnnotations())
 	if err := r.client.Update(ctx, pr); err != nil {
@@ -797,8 +794,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 	}
 
-	if r.runtimeHook != nil {
-		pwr := pr.(v1.PackageRevisionWithRuntime)
+	if hasRuntime && r.runtimeHook != nil {
 		if err := r.runtimeHook.Pre(ctx, pkgMeta, pwr, runtimeManifestBuilder); err != nil {
 			if kerrors.IsConflict(err) {
 				return reconcile.Result{Requeue: true}, nil
@@ -847,8 +843,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	})
 	pr.SetObjects(refs)
 
-	if r.runtimeHook != nil {
-		if err := r.runtimeHook.Post(ctx, pkgMeta, pr.(v1.PackageRevisionWithRuntime), runtimeManifestBuilder); err != nil {
+	if hasRuntime && r.runtimeHook != nil {
+		if err := r.runtimeHook.Post(ctx, pkgMeta, pwr, runtimeManifestBuilder); err != nil {
 			if kerrors.IsConflict(err) {
 				return reconcile.Result{Requeue: true}, nil
 			}
@@ -883,12 +879,13 @@ func (r *Reconciler) deactivateRevision(ctx context.Context, pr v1.PackageRevisi
 		return errors.Wrap(err, errReleaseObjects)
 	}
 
-	if r.runtimeHook == nil {
+	prwr, ok := pr.(v1.PackageRevisionWithRuntime)
+	if !ok || r.runtimeHook == nil {
 		return nil
 	}
 
 	// Call deactivation hook.
-	if err := r.runtimeHook.Deactivate(ctx, pr.(v1.PackageRevisionWithRuntime), runtimeManifestBuilder); err != nil {
+	if err := r.runtimeHook.Deactivate(ctx, prwr, runtimeManifestBuilder); err != nil {
 		return errors.Wrap(err, errDeactivationHook)
 	}
 

@@ -29,7 +29,8 @@ type StoreConfigSpec struct {
 
 // +kubebuilder:object:root=true
 
-// A StoreConfig configures how Crossplane controllers should store connection details.
+// A StoreConfig configures how Crossplane controllers should store connection
+// details in an external secret store.
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="TYPE",type="string",JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="DEFAULT-SCOPE",type="string",JSONPath=".spec.defaultScope"
@@ -43,14 +44,14 @@ type StoreConfig struct {
 
 // +kubebuilder:object:root=true
 
-// StoreConfigList contains a list of StoreConfig
+// StoreConfigList contains a list of StoreConfig.
 type StoreConfigList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []StoreConfig `json:"items"`
 }
 
-// GetStoreConfig returns SecretStoreConfig
+// GetStoreConfig returns SecretStoreConfig.
 func (in *StoreConfig) GetStoreConfig() xpv1.SecretStoreConfig {
 	return in.Spec.SecretStoreConfig
 }

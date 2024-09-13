@@ -67,10 +67,21 @@ Here are the members of the initial steering committee (listed in alphabetical o
 | &nbsp;                                                    | Member                                         | Organization | Email                       | Term Start | Term End   |
 |-----------------------------------------------------------|------------------------------------------------|--------------|-----------------------------|------------|------------|
 | <img width="30px" src="https://github.com/bassam.png">    | [Bassam Tabbara](https://github.com/bassam)    | Upbound      | bassam@upbound.io           | 2024-02-06 | 2026-02-06 |
-| <img width="30px" src="https://github.com/brlindblom.png">| [Brian Lindblom](https://github.com/brlindblom)| Apple        | blindblom@apple.com         | 2024-02-06 | 2025-02-07 |
+| <img width="30px" src="https://github.com/lindblombr.png">| [Brian Lindblom](https://github.com/lindblombr)| Apple        | blindblom@apple.com         | 2024-02-06 | 2025-02-07 |
 | <img width="30px" src="https://github.com/bobh66.png">    | [Bob Haddleton](https://github.com/bobh66)     | Nokia        | bob.haddleton@nokia.com     | 2024-02-06 | 2025-02-07 |
 | <img width="30px" src="https://github.com/jbw976.png">    | [Jared Watts](https://github.com/jbw976)       | Upbound      | jared@upbound.io            | 2024-02-06 | 2026-02-06 |
 | <img width="30px" src="https://github.com/negz.png">      | [Nic Cope](https://github.com/negz)            | Upbound      | negz@upbound.io             | 2024-02-06 | 2026-02-06 |
+
+### Contact Info
+
+The steering committee can be reached at the following locations:
+
+* [`#steering-committee`](https://crossplane.slack.com/archives/C032WMA459S)
+  channel on the [Crossplane Slack](https://slack.crossplane.io/) workspace
+* [`steering@crossplane.io`](mailto:steering@crossplane.io) public email address
+
+Members of the community as well as the broader ecosystem are welcome to contact
+the steering committee for any issues or concerns they can assist with.
 
 ### Election Process
 

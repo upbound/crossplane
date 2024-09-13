@@ -18,7 +18,7 @@ limitations under the License.
 */
 
 // NOTE(negz): See the below link for details on what is happening here.
-// https://github.com/golang/go/wiki/Modules#how-can-i-track-tool-dependencies-for-a-module
+// https://go.dev/wiki/Modules#how-can-i-track-tool-dependencies-for-a-module
 
 // Remove existing manifests
 //go:generate rm -rf ../cluster/crds
@@ -32,8 +32,14 @@ limitations under the License.
 //go:generate ../hack/duplicate_api_type.sh apiextensions/v1/composition_transforms.go apiextensions/v1beta1
 //go:generate ../hack/duplicate_api_type.sh apiextensions/v1/composition_environment.go apiextensions/v1beta1
 
+//go:generate ../hack/duplicate_api_type.sh pkg/v1/package_types.go pkg/v1beta1
+//go:generate ../hack/duplicate_api_type.sh pkg/v1/package_runtime_types.go pkg/v1beta1
+//go:generate ../hack/duplicate_api_type.sh pkg/v1/revision_types.go pkg/v1beta1
+//go:generate ../hack/duplicate_api_type.sh pkg/v1/function_types.go pkg/v1beta1
+
 //go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/configuration_types.go pkg/meta/v1alpha1
 //go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/provider_types.go pkg/meta/v1alpha1
+//go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/function_types.go pkg/meta/v1beta1
 //go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/meta.go pkg/meta/v1alpha1
 //go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/meta.go pkg/meta/v1beta1
 
@@ -57,6 +63,11 @@ limitations under the License.
 // Generate conversion code
 //go:generate go run -tags generate github.com/jmattheis/goverter/cmd/goverter gen -build-tags="" ./apiextensions/v1
 //go:generate go run -tags generate github.com/jmattheis/goverter/cmd/goverter gen -build-tags="" ./pkg/meta/v1alpha1
+//go:generate go run -tags generate github.com/jmattheis/goverter/cmd/goverter gen -build-tags="" ./pkg/meta/v1beta1
+
+// Replicate identical gRPC APIs
+
+//go:generate ../hack/duplicate_proto_type.sh apiextensions/fn/proto/v1/run_function.proto apiextensions/fn/proto/v1beta1
 
 // Generate gRPC types and stubs.
 //
@@ -70,12 +81,11 @@ limitations under the License.
 // (or protoc) to invoke them.
 
 //go:generate go install google.golang.org/protobuf/cmd/protoc-gen-go google.golang.org/grpc/cmd/protoc-gen-go-grpc
-//go:generate go run github.com/bufbuild/buf/cmd/buf generate
+//go:generate go run github.com/bufbuild/buf/cmd/buf@v1.31.0 generate
 
 package apis
 
 import (
-	_ "github.com/bufbuild/buf/cmd/buf"                 //nolint:typecheck
 	_ "github.com/jmattheis/goverter/cmd/goverter"      //nolint:typecheck
 	_ "google.golang.org/grpc/cmd/protoc-gen-go-grpc"   //nolint:typecheck
 	_ "google.golang.org/protobuf/cmd/protoc-gen-go"    //nolint:typecheck

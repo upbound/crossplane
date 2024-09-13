@@ -27,7 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
@@ -37,7 +36,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/claim"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
 
@@ -86,7 +84,7 @@ func ControllerName(name string) string {
 // managed using client-side apply, but should now be managed using server-side
 // apply. See https://github.com/kubernetes/kubernetes/issues/99003 for details.
 type ManagedFieldsUpgrader interface {
-	Upgrade(ctx context.Context, obj client.Object, ssaManager string, csaManagers ...string) error
+	Upgrade(ctx context.Context, obj client.Object, ssaManager string) error
 }
 
 // A CompositeSyncer binds and syncs the supplied claim with the supplied
@@ -162,10 +160,10 @@ type DefaultsSelector interface {
 	SelectDefaults(ctx context.Context, cm resource.CompositeClaim) error
 }
 
-// A DefaultsSelectorFn is responsible for copying default values from the CompositeResourceDefinition
+// A DefaultsSelectorFn is responsible for copying default values from the CompositeResourceDefinition.
 type DefaultsSelectorFn func(ctx context.Context, cm resource.CompositeClaim) error
 
-// SelectDefaults copies default values from the XRD if necessary
+// SelectDefaults copies default values from the XRD if necessary.
 func (fn DefaultsSelectorFn) SelectDefaults(ctx context.Context, cm resource.CompositeClaim) error {
 	return fn(ctx, cm)
 }
@@ -220,14 +218,6 @@ func defaultCRClaim(c client.Client) crClaim {
 
 // A ReconcilerOption configures a Reconciler.
 type ReconcilerOption func(*Reconciler)
-
-// WithClient specifies how the Reconciler should interact with the Kubernetes
-// API.
-func WithClient(c client.Client) ReconcilerOption {
-	return func(r *Reconciler) {
-		r.client = c
-	}
-}
 
 // WithManagedFieldsUpgrader specifies how the Reconciler should upgrade claim
 // and composite resource (XR) managed fields from client-side apply to
@@ -300,8 +290,7 @@ func WithPollInterval(after time.Duration) ReconcilerOption {
 // The returned Reconciler will apply only the ObjectMetaConfigurator by
 // default; most callers should supply one or more CompositeConfigurators to
 // configure their composite resources.
-func NewReconciler(m manager.Manager, of resource.CompositeClaimKind, with resource.CompositeKind, o ...ReconcilerOption) *Reconciler {
-	c := unstructured.NewClient(m.GetClient())
+func NewReconciler(c client.Client, of resource.CompositeClaimKind, with resource.CompositeKind, o ...ReconcilerOption) *Reconciler {
 	r := &Reconciler{
 		client:        c,
 		gvkClaim:      schema.GroupVersionKind(of),
@@ -321,7 +310,7 @@ func NewReconciler(m manager.Manager, of resource.CompositeClaimKind, with resou
 }
 
 // Reconcile a composite resource claim with a concrete composite resource.
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocyclo // Complexity is tough to avoid here.
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocognit // Complexity is tough to avoid here.
 	log := r.log.WithValues("request", req)
 	log.Debug("Reconciling")
 
@@ -390,7 +379,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	// to upgrade field managers if _this controller_ might have applied the XR
 	// before using the default client-side apply field manager "crossplane",
 	// but now wants to use server-side apply instead.
-	if err := r.managedFields.Upgrade(ctx, xr, FieldOwnerXR, "crossplane"); err != nil {
+	if err := r.managedFields.Upgrade(ctx, xr, FieldOwnerXR); err != nil {
 		if kerrors.IsConflict(err) {
 			return reconcile.Result{Requeue: true}, nil
 		}
@@ -411,7 +400,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			}
 			if meta.WasDeleted(xr) && requiresForegroundDeletion {
 				log.Debug("Waiting for the XR to finish deleting (foreground deletion)")
-				return reconcile.Result{Requeue: true}, nil
+				return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, cm), errUpdateClaimStatus)
 			}
 			do := &client.DeleteOptions{}
 			if requiresForegroundDeletion {
@@ -483,6 +472,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	cm.SetConditions(xpv1.ReconcileSuccess())
+
+	// Copy any custom status conditions from the XR to the claim.
+	for _, cType := range xr.GetClaimConditionTypes() {
+		c := xr.GetCondition(cType)
+		cm.SetConditions(c)
+	}
 
 	if !resource.IsConditionTrue(xr.GetCondition(xpv1.TypeReady)) {
 		record.Event(cm, event.Normal(reasonBind, "Composite resource is not yet ready"))

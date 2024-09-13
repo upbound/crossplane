@@ -25,6 +25,7 @@ import (
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -104,23 +105,23 @@ func (v *validator) ValidateCreate(ctx context.Context, obj runtime.Object) (war
 }
 
 // ValidateUpdate implements the same logic as ValidateCreate.
-func (v *validator) ValidateUpdate(ctx context.Context, old, new runtime.Object) (warns admission.Warnings, err error) {
+func (v *validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (warns admission.Warnings, err error) {
 	// Validate the update
-	oldObj, ok := old.(*v1.CompositeResourceDefinition)
+	oldXRD, ok := oldObj.(*v1.CompositeResourceDefinition)
 	if !ok {
 		return nil, errors.New(errUnexpectedType)
 	}
-	newObj, ok := new.(*v1.CompositeResourceDefinition)
+	newXRD, ok := newObj.(*v1.CompositeResourceDefinition)
 	if !ok {
 		return nil, errors.New(errUnexpectedType)
 	}
 	// Validate the update
-	validationWarns, validationErr := newObj.ValidateUpdate(oldObj)
+	validationWarns, validationErr := newXRD.ValidateUpdate(oldXRD)
 	warns = append(warns, validationWarns...)
 	if validationErr != nil {
 		return validationWarns, validationErr.ToAggregate()
 	}
-	crds, err := getAllCRDsForXRD(newObj)
+	crds, err := getAllCRDsForXRD(newXRD)
 	if err != nil {
 		return warns, xperrors.Wrap(err, "cannot get CRDs for CompositeResourceDefinition")
 	}
@@ -137,7 +138,7 @@ func (v *validator) ValidateUpdate(ctx context.Context, old, new runtime.Object)
 		// which previously did not specify a claim.
 		err := v.dryRunUpdateOrCreateIfNotFound(ctx, crd)
 		if err != nil {
-			return warns, v.rewriteError(err, newObj, crd)
+			return warns, v.rewriteError(err, newXRD, crd)
 		}
 	}
 
@@ -145,16 +146,18 @@ func (v *validator) ValidateUpdate(ctx context.Context, old, new runtime.Object)
 }
 
 func (v *validator) dryRunUpdateOrCreateIfNotFound(ctx context.Context, crd *apiextv1.CustomResourceDefinition) error {
-	got := crd.DeepCopy()
-	err := v.client.Get(ctx, client.ObjectKey{Name: crd.Name}, got)
-	if err == nil {
-		got.Spec = crd.Spec
-		return v.client.Update(ctx, got, client.DryRunAll)
-	}
-	if kerrors.IsNotFound(err) {
-		return v.client.Create(ctx, crd, client.DryRunAll)
-	}
-	return err
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		got := crd.DeepCopy()
+		err := v.client.Get(ctx, client.ObjectKey{Name: crd.Name}, got)
+		if err == nil {
+			got.Spec = crd.Spec
+			return v.client.Update(ctx, got, client.DryRunAll)
+		}
+		if kerrors.IsNotFound(err) {
+			return v.client.Create(ctx, crd, client.DryRunAll)
+		}
+		return err
+	})
 }
 
 // ValidateDelete always allows delete requests.

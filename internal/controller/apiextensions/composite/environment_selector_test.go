@@ -227,7 +227,7 @@ func TestSelect(t *testing.T) {
 			reason: "It should create a name reference for the first selected EnvironmentConfig that matches the labels.",
 			args: args{
 				kube: &test.MockClient{
-					MockList: func(ctx context.Context, obj client.ObjectList, opts ...client.ListOption) error {
+					MockList: func(_ context.Context, obj client.ObjectList, opts ...client.ListOption) error {
 						list := obj.(*v1alpha1.EnvironmentConfigList)
 						match := opts[0].(client.MatchingLabels)
 						if match["foo"] != "test-composite" {
@@ -693,13 +693,11 @@ func TestSelect(t *testing.T) {
 							APIVersion: v1alpha1.SchemeGroupVersion.String(),
 						},
 						{
-
 							Name:       "test-2",
 							Kind:       v1alpha1.EnvironmentConfigKind,
 							APIVersion: v1alpha1.SchemeGroupVersion.String(),
 						},
 						{
-
 							Name:       "test-3",
 							Kind:       v1alpha1.EnvironmentConfigKind,
 							APIVersion: v1alpha1.SchemeGroupVersion.String(),
@@ -984,13 +982,11 @@ func TestSelect(t *testing.T) {
 							APIVersion: v1alpha1.SchemeGroupVersion.String(),
 						},
 						{
-
 							Name:       "test-2",
 							Kind:       v1alpha1.EnvironmentConfigKind,
 							APIVersion: v1alpha1.SchemeGroupVersion.String(),
 						},
 						{
-
 							Name:       "test-3",
 							Kind:       v1alpha1.EnvironmentConfigKind,
 							APIVersion: v1alpha1.SchemeGroupVersion.String(),

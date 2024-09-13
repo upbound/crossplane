@@ -41,7 +41,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
-	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
 	"github.com/crossplane/crossplane/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/internal/xpkg"
 )
@@ -217,10 +216,10 @@ func SetupConfiguration(mgr ctrl.Manager, o controller.Options) error {
 
 // SetupFunction adds a controller that reconciles Functions.
 func SetupFunction(mgr ctrl.Manager, o controller.Options) error {
-	name := "packages/" + strings.ToLower(v1beta1.FunctionGroupKind)
-	np := func() v1.Package { return &v1beta1.Function{} }
-	nr := func() v1.PackageRevision { return &v1beta1.FunctionRevision{} }
-	nrl := func() v1.PackageRevisionList { return &v1beta1.FunctionRevisionList{} }
+	name := "packages/" + strings.ToLower(v1.FunctionGroupKind)
+	np := func() v1.Package { return &v1.Function{} }
+	nr := func() v1.PackageRevision { return &v1.FunctionRevision{} }
+	nrl := func() v1.PackageRevisionList { return &v1.FunctionRevisionList{} }
 
 	cs, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
@@ -242,8 +241,8 @@ func SetupFunction(mgr ctrl.Manager, o controller.Options) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
-		For(&v1beta1.Function{}).
-		Owns(&v1beta1.FunctionRevision{}).
+		For(&v1.Function{}).
+		Owns(&v1.FunctionRevision{}).
 		WithOptions(o.ForControllerRuntime()).
 		Complete(ratelimiter.NewReconciler(name, errors.WithSilentRequeueOnConflict(NewReconciler(mgr, opts...)), o.GlobalRateLimiter))
 }
@@ -268,7 +267,7 @@ func NewReconciler(mgr ctrl.Manager, opts ...ReconcilerOption) *Reconciler {
 }
 
 // Reconcile package.
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocyclo // Reconcilers are complex. Be wary of adding more.
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) { //nolint:gocognit // Reconcilers are complex. Be wary of adding more.
 	log := r.log.WithValues("request", req)
 	log.Debug("Reconciling")
 
@@ -418,12 +417,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	pr.SetSkipDependencyResolution(p.GetSkipDependencyResolution())
 	pr.SetCommonLabels(p.GetCommonLabels())
 
-	if pwr, ok := p.(v1.PackageWithRuntime); ok {
-		pwrr := pr.(v1.PackageRevisionWithRuntime)
-		pwrr.SetRuntimeConfigRef(pwr.GetRuntimeConfigRef())
-		pwrr.SetControllerConfigRef(pwr.GetControllerConfigRef())
-		pwrr.SetTLSServerSecretName(pwr.GetTLSServerSecretName())
-		pwrr.SetTLSClientSecretName(pwr.GetTLSClientSecretName())
+	pwr, pwok := p.(v1.PackageWithRuntime)
+	prwr, prok := pr.(v1.PackageRevisionWithRuntime)
+	if pwok && prok {
+		prwr.SetRuntimeConfigRef(pwr.GetRuntimeConfigRef())
+		prwr.SetControllerConfigRef(pwr.GetControllerConfigRef())
+		prwr.SetTLSServerSecretName(pwr.GetTLSServerSecretName())
+		prwr.SetTLSClientSecretName(pwr.GetTLSClientSecretName())
 	}
 
 	// If current revision is not active, and we have an automatic or
