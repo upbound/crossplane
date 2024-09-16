@@ -1,7 +1,7 @@
 # See https://docs.earthly.dev/docs/earthfile/features
 VERSION --try --raw-output 0.8
 
-PROJECT crossplane/crossplane
+PROJECT upbound/crossplane
 
 ARG --global GO_VERSION=1.22.3
 
@@ -44,7 +44,7 @@ generate:
   BUILD +go-generate
   BUILD +helm-generate
 
-# e2e runs end-to-end tests. See test/e2e/README.md for details. 
+# e2e runs end-to-end tests. See test/e2e/README.md for details.
 e2e:
   ARG FLAGS="-test-suite=base"
   # Docker installs faster on Alpine, and we only need Go for go tool test2json.
@@ -314,7 +314,7 @@ helm-docs-setup:
   FROM --platform=${NATIVEPLATFORM} curlimages/curl:8.8.0
   IF [ "${TARGETARCH}" = "amd64" ]
     LET ARCH=x86_64
-  ELSE 
+  ELSE
     LET ARCH=${TARGETARCH}
   END
   RUN curl -fsSL https://github.com/norwoodj/helm-docs/releases/download/v${HELM_DOCS_VERSION}/helm-docs_${HELM_DOCS_VERSION}_${TARGETOS}_${ARCH}.tar.gz|tar zx>helm-docs
@@ -345,14 +345,14 @@ helm-setup:
 # ci-version is used by CI to set the CROSSPLANE_VERSION environment variable.
 ci-version:
   LOCALLY
-  RUN echo "CROSSPLANE_VERSION=$(git describe --dirty --always --tags|sed -e 's/-/./2g')" > $GITHUB_ENV
+  RUN echo "CROSSPLANE_VERSION=$(git describe --dirty --always --tags|sed -e 's/-/./2g'|sed 's/[\.,-]up.*//')" > $GITHUB_ENV
 
 # ci-artifacts is used by CI to build and push the Crossplane image, chart, and
 # binaries.
 ci-artifacts:
   BUILD +multiplatform-build \
-    --CROSSPLANE_REPO=index.docker.io/crossplane/crossplane \
-    --CROSSPLANE_REPO=xpkg.upbound.io/crossplane/crossplane
+    --CROSSPLANE_REPO=index.docker.io/upbound/crossplane \
+    --CROSSPLANE_REPO=xpkg.upbound.io/upbound/crossplane
 
 # ci-codeql-setup sets up CodeQL for the ci-codeql target.
 ci-codeql-setup:
