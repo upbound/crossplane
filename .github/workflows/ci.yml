@@ -328,11 +328,11 @@ jobs:
         if: (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release-')) && env.DOCKER_USR != '' && env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
         run: echo "EARTHLY_PUSH=true" >> $GITHUB_ENV
 
-      - name: Set CROSSPLANE_VERSION GitHub Environment Variable
+      - name: Set CROSSPLANE_VERSION and CROSSPLANE_INTERNAL_VERSION GitHub Environment Variables
         run: earthly +ci-version
 
       - name: Build and Push Artifacts
-        run: earthly --strict --remote-cache ghcr.io/upbound/crossplane-earthly-cache:${{ github.job }} +ci-artifacts --CROSSPLANE_VERSION=${CROSSPLANE_VERSION}
+        run: earthly --strict --remote-cache ghcr.io/upbound/crossplane-earthly-cache:${{ github.job }} +ci-artifacts --CROSSPLANE_VERSION=${CROSSPLANE_VERSION} --CROSSPLANE_INTERNAL_VERSION=${CROSSPLANE_INTERNAL_VERSION}
 
       - name: Upload Artifacts to GitHub
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4
