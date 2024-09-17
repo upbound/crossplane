@@ -11,7 +11,7 @@ require (
 	github.com/alecthomas/kong v0.8.1
 	github.com/bufbuild/buf v1.27.2
 	github.com/crossplane/crossplane-runtime v1.15.0
-	github.com/docker/docker v25.0.5+incompatible
+	github.com/docker/docker v25.0.6+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/emicklei/dot v1.6.1
 	github.com/go-git/go-billy/v5 v5.5.0
@@ -183,7 +183,7 @@ require (
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.45.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
-	github.com/rs/cors v1.10.1 // indirect
+	github.com/rs/cors v1.11.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/spf13/cobra v1.8.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
