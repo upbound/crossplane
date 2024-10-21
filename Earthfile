@@ -152,7 +152,7 @@ go-build:
   ARG TARGETOS
   ARG GOARCH=${TARGETARCH}
   ARG GOOS=${TARGETOS}
-  ARG GOFLAGS="-ldflags=-X=github.com/crossplane/crossplane/internal/version.version=${CROSSPLANE_INTERNAL_VERSION}"
+  ARG GOFLAGS="\"-ldflags=-s -w -X=github.com/crossplane/crossplane/internal/version.version=${CROSSPLANE_INTERNAL_VERSION}\""
   ARG CGO_ENABLED=0
   FROM +go-modules
   LET ext = ""
