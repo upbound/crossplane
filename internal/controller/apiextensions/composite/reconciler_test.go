@@ -41,6 +41,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/claim"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
+	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/reference"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
@@ -675,7 +676,7 @@ func TestReconcile(t *testing.T) {
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
 						if xr, ok := obj.(*composite.Unstructured); ok {
 							// non-nil claim ref to trigger claim Get()
-							xr.SetClaimReference(&claim.Reference{})
+							xr.SetClaimReference(&reference.Claim{})
 							return nil
 						}
 						if cm, ok := obj.(*claim.Unstructured); ok {
@@ -705,7 +706,7 @@ func TestReconcile(t *testing.T) {
 							xpv1.Available(),
 						)
 						cr.(*composite.Unstructured).SetClaimConditionTypes("DatabaseReady")
-						cr.SetClaimReference(&claim.Reference{})
+						cr.SetClaimReference(&reference.Claim{})
 					})),
 				},
 				opts: []ReconcilerOption{
@@ -833,7 +834,7 @@ func TestReconcile(t *testing.T) {
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
 						if xr, ok := obj.(*composite.Unstructured); ok {
 							// non-nil claim ref to trigger claim Get()
-							xr.SetClaimReference(&claim.Reference{})
+							xr.SetClaimReference(&reference.Claim{})
 							xr.SetConditions(xpv1.Condition{
 								Type:    "DatabaseReady",
 								Status:  corev1.ConditionTrue,
@@ -882,7 +883,7 @@ func TestReconcile(t *testing.T) {
 							"DatabaseReady",
 							"BucketReady",
 						)
-						cr.SetClaimReference(&claim.Reference{})
+						cr.SetClaimReference(&reference.Claim{})
 					})),
 				},
 				opts: []ReconcilerOption{
@@ -1024,7 +1025,7 @@ func TestReconcile(t *testing.T) {
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
 						if xr, ok := obj.(*composite.Unstructured); ok {
 							// non-nil claim ref to trigger claim Get()
-							xr.SetClaimReference(&claim.Reference{})
+							xr.SetClaimReference(&reference.Claim{})
 							// The database condition already exists on the XR.
 							xr.SetConditions(xpv1.Condition{
 								Type:    "DatabaseReady",
@@ -1087,7 +1088,7 @@ func TestReconcile(t *testing.T) {
 							"DatabaseReady",
 							"BucketReady",
 						)
-						cr.SetClaimReference(&claim.Reference{})
+						cr.SetClaimReference(&reference.Claim{})
 					})),
 				},
 				opts: []ReconcilerOption{
@@ -1162,6 +1163,81 @@ func TestReconcile(t *testing.T) {
 				r: reconcile.Result{RequeueAfter: defaultPollInterval},
 			},
 		},
+		"SystemConditionUpdate": {
+			reason: "A system condition should be updated if it is explicitly allowed to do so",
+			args: args{
+				client: &test.MockClient{
+					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+						if xr, ok := obj.(*composite.Unstructured); ok {
+							// non-nil claim ref to trigger claim Get()
+							xr.SetClaimReference(&reference.Claim{})
+							return nil
+						}
+						if cm, ok := obj.(*claim.Unstructured); ok {
+							claim.New(claim.WithGroupVersionKind(schema.GroupVersionKind{})).DeepCopyInto(cm)
+							return nil
+						}
+						return nil
+					}),
+					MockStatusUpdate: WantComposite(t, NewComposite(func(cr resource.Composite) {
+						cr.SetCompositionReference(&corev1.ObjectReference{})
+						cr.SetConditions(
+							xpv1.ReconcileSuccess(),
+							xpv1.Creating().WithMessage("Composite resource was explicitly marked as unready by the composer"),
+						)
+						cr.SetClaimReference(&reference.Claim{})
+					})),
+				},
+				opts: []ReconcilerOption{
+					WithRecorder(newTestRecorder(
+						eventArgs{
+							Kind: compositeKind,
+							Event: event.Event{
+								Type:        event.Type(corev1.EventTypeNormal),
+								Reason:      "SelectComposition",
+								Message:     "Successfully selected composition: ",
+								Annotations: map[string]string{},
+							},
+						},
+						eventArgs{
+							Kind: compositeKind,
+							Event: event.Event{
+								Type:        event.Type(corev1.EventTypeNormal),
+								Reason:      "ComposeResources",
+								Message:     "Successfully composed resources",
+								Annotations: map[string]string{},
+							},
+						},
+					)),
+					WithCompositeFinalizer(resource.NewNopFinalizer()),
+					WithCompositionSelector(CompositionSelectorFn(func(_ context.Context, cr resource.Composite) error {
+						cr.SetCompositionReference(&corev1.ObjectReference{})
+						return nil
+					})),
+					WithCompositionRevisionFetcher(CompositionRevisionFetcherFn(func(_ context.Context, _ resource.Composite) (*v1.CompositionRevision, error) {
+						return &v1.CompositionRevision{}, nil
+					})),
+					WithCompositionRevisionValidator(CompositionRevisionValidatorFn(func(_ *v1.CompositionRevision) error { return nil })),
+					WithConfigurator(ConfiguratorFn(func(_ context.Context, _ resource.Composite, _ *v1.CompositionRevision) error {
+						return nil
+					})),
+					WithComposer(ComposerFn(func(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
+						return CompositionResult{
+							Composite: CompositeResource{
+								Ready: &valBoolFalse,
+							},
+							Composed:          []ComposedResource{},
+							ConnectionDetails: cd,
+							Events:            []TargetedEvent{},
+							Conditions:        []TargetedCondition{},
+						}, nil
+					})),
+				},
+			},
+			want: want{
+				r: reconcile.Result{RequeueAfter: defaultPollInterval},
+			},
+		},
 		"CustomEventsFailToGetClaim": {
 			reason: "We should emit custom events that were returned by the composer. If we cannot get the claim, we should just emit events for the composite and continue as normal.",
 			args: args{
@@ -1169,7 +1245,7 @@ func TestReconcile(t *testing.T) {
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
 						if xr, ok := obj.(*composite.Unstructured); ok {
 							// non-nil claim ref to trigger claim Get()
-							xr.SetClaimReference(&claim.Reference{})
+							xr.SetClaimReference(&reference.Claim{})
 							return nil
 						}
 						if _, ok := obj.(*claim.Unstructured); ok {
@@ -1181,7 +1257,7 @@ func TestReconcile(t *testing.T) {
 					MockStatusUpdate: WantComposite(t, NewComposite(func(cr resource.Composite) {
 						cr.SetCompositionReference(&corev1.ObjectReference{})
 						cr.SetConditions(xpv1.ReconcileSuccess(), xpv1.Available())
-						cr.SetClaimReference(&claim.Reference{})
+						cr.SetClaimReference(&reference.Claim{})
 					})),
 				},
 				opts: []ReconcilerOption{

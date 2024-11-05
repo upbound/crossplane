@@ -3,7 +3,7 @@ VERSION --try --raw-output 0.8
 
 PROJECT upbound/crossplane
 
-ARG --global GO_VERSION=1.22.3
+ARG --global GO_VERSION=1.22.8
 
 # reviewable checks that a branch is ready for review. Run it before opening a
 # pull request. It will catch a lot of the things our CI workflow will catch.
@@ -141,6 +141,7 @@ go-generate:
     && mv /tmp/patched.yaml cluster/crds/pkg.crossplane.io_deploymentruntimeconfigs.yaml
   SAVE ARTIFACT apis/ AS LOCAL apis
   SAVE ARTIFACT cluster/crds AS LOCAL cluster/crds
+  SAVE ARTIFACT cluster/meta AS LOCAL cluster/meta
 
 # go-build builds Crossplane binaries for your native OS and architecture.
 go-build:
