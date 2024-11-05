@@ -115,6 +115,13 @@ type startCommand struct {
 	EnableSSAClaims                 bool `group:"Alpha Features:" help:"Enable support for using Kubernetes server-side apply to sync claims with composite resources (XRs)."`
 	EnableDependencyVersionUpgrades bool `group:"Alpha Features:" help:"Enable support for upgrading dependency versions when the parent package is updated."`
 	EnableSignatureVerification     bool `group:"Alpha Features:" help:"Enable support for package signature verification via ImageConfig API."`
+	// NOTE(hasheddan): this feature is unlikely to graduate from alpha status
+	// and should be removed when a runtime interface is introduced upstream.
+	// See https://github.com/crossplane/crossplane/issues/2671 for more
+	// information.
+	// TODO(turkenh): Consider removing this feature flag in favor of providing
+	//  a default DeploymentRuntimeConfig.
+	EnableProviderIdentity bool `group:"Alpha Features:" help:"Enable support for Provider identity."`
 
 	EnableCompositionWebhookSchemaValidation bool `default:"true" group:"Beta Features:" help:"Enable support for Composition validation using schemas."`
 	EnableDeploymentRuntimeConfigs           bool `default:"true" group:"Beta Features:" help:"Enable support for Deployment Runtime Configs."`
@@ -205,6 +212,11 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		PollInterval:            c.PollInterval,
 		GlobalRateLimiter:       ratelimiter.NewGlobal(c.MaxReconcileRate),
 		Features:                &feature.Flags{},
+	}
+
+	if c.EnableProviderIdentity {
+		o.Features.Enable(features.EnableProviderIdentity)
+		log.Info("Alpha feature enabled", "flag", features.EnableProviderIdentity)
 	}
 
 	if !c.EnableCompositionRevisions {
