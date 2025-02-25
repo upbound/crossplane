@@ -1,7 +1,7 @@
 # See https://docs.earthly.dev/docs/earthfile/features
 VERSION --try --raw-output 0.8
 
-PROJECT crossplane/crossplane
+PROJECT upbound/crossplane
 
 ARG --global GO_VERSION=1.23.4
 
@@ -159,11 +159,12 @@ go-build:
   ARG EARTHLY_GIT_SHORT_HASH
   ARG EARTHLY_GIT_COMMIT_TIMESTAMP
   ARG CROSSPLANE_VERSION=v0.0.0-${EARTHLY_GIT_COMMIT_TIMESTAMP}-${EARTHLY_GIT_SHORT_HASH}
+  ARG CROSSPLANE_INTERNAL_VERSION=${CROSSPLANE_VERSION}
   ARG TARGETARCH
   ARG TARGETOS
   ARG GOARCH=${TARGETARCH}
   ARG GOOS=${TARGETOS}
-  ARG GOFLAGS="\"-ldflags=-s -w -X=github.com/crossplane/crossplane/internal/version.version=${CROSSPLANE_VERSION}\""
+  ARG GOFLAGS="\"-ldflags=-s -w -X=github.com/crossplane/crossplane/internal/version.version=${CROSSPLANE_INTERNAL_VERSION}\""
   ARG CGO_ENABLED=0
   FROM +go-modules
   LET ext = ""
@@ -366,13 +367,14 @@ helm-setup:
 ci-version:
   LOCALLY
   RUN echo "CROSSPLANE_VERSION=$(git describe --dirty --always --tags|sed -e 's/-/./2g')" > $GITHUB_ENV
+  RUN echo "CROSSPLANE_INTERNAL_VERSION=$(git describe --dirty --always --tags|sed -e 's/-/./2g'|sed -e 's/[\.,-]up.*//')" >> $GITHUB_ENV
 
 # ci-artifacts is used by CI to build and push the Crossplane image, chart, and
 # binaries.
 ci-artifacts:
   BUILD +multiplatform-build \
-    --CROSSPLANE_REPO=index.docker.io/crossplane/crossplane \
-    --CROSSPLANE_REPO=xpkg.upbound.io/crossplane/crossplane
+    --CROSSPLANE_REPO=index.docker.io/upbound/crossplane \
+    --CROSSPLANE_REPO=xpkg.upbound.io/upbound/crossplane
 
 # ci-codeql-setup sets up CodeQL for the ci-codeql target.
 ci-codeql-setup:
