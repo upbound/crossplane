@@ -20,7 +20,7 @@ on:
 
 env:
   # Common versions
-  EARTHLY_VERSION: '0.8.13'
+  EARTHLY_VERSION: '0.8.15'
 
   # Common users. We can't run a step 'if secrets.AWS_USR != ""' but we can run
   # a step 'if env.AWS_USR' != ""', so we copy these to succinctly test whether
@@ -34,10 +34,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Setup Earthly
-        uses: earthly/actions-setup@v1
+        uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           version: ${{ env.EARTHLY_VERSION }}
