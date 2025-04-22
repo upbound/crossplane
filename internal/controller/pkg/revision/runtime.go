@@ -102,7 +102,6 @@ type RuntimeManifestBuilder struct {
 	runtimeConfig             *v1beta1.DeploymentRuntimeConfig
 	controllerConfig          *v1alpha1.ControllerConfig
 	pullSecrets               []string
-	providerIdentity          bool
 }
 
 // RuntimeManifestBuilderOption is used to configure a RuntimeManifestBuilder.
@@ -137,14 +136,6 @@ func RuntimeManifestBuilderWithServiceAccountPullSecrets(secrets []corev1.LocalO
 func RuntimeManifestBuilderWithPullSecrets(secrets ...string) RuntimeManifestBuilderOption {
 	return func(b *RuntimeManifestBuilder) {
 		b.pullSecrets = secrets
-	}
-}
-
-// RuntimeManifestBuilderWithProviderIdentity sets the provider identity flag
-// to use when building the runtime manifests.
-func RuntimeManifestBuilderWithProviderIdentity() RuntimeManifestBuilderOption {
-	return func(b *RuntimeManifestBuilder) {
-		b.providerIdentity = true
 	}
 }
 
@@ -257,10 +248,6 @@ func (b *RuntimeManifestBuilder) Deployment(serviceAccount string, overrides ...
 
 	if b.revision.GetTLSServerSecretName() != nil {
 		allOverrides = append(allOverrides, DeploymentRuntimeWithTLSServerSecret(*b.revision.GetTLSServerSecretName()))
-	}
-
-	if b.providerIdentity {
-		allOverrides = append(allOverrides, DeploymentWithUpboundProviderIdentity())
 	}
 
 	// We append the overrides passed to the function last so that they can
