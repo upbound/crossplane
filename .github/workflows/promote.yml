@@ -44,34 +44,16 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           version: ${{ env.EARTHLY_VERSION }}
 
-      - name: Promote Image to docker.io/crossplane/crossplane:${{ inputs.channel }}
-        if: env.DOCKER_USR != ''
-        run: |
-          earthly --strict \
-            --push \
-            --secret DOCKER_USER=${{ secrets.DOCKER_USR }} \
-            --secret DOCKER_PASSWORD=${{ secrets.DOCKER_PSW }} \
-            +ci-promote-image --CHANNEL=${{ inputs.channel }} --CROSSPLANE_VERSION=${{ inputs.version }} --CROSSPLANE_REPO=docker.io/crossplane/crossplane
-
-      - name: Promote Image to ghcr.io/crossplane/crossplane:${{ inputs.channel }}
-        if: env.GHCR_USR != ''
-        run: |
-          earthly --strict \
-            --push \
-            --secret DOCKER_USER=${{ github.actor }} \
-            --secret DOCKER_PASSWORD=${{ secrets.GITHUB_TOKEN }} \
-            +ci-promote-image --CHANNEL=${{ inputs.channel }} --CROSSPLANE_VERSION=${{ inputs.version }} --CROSSPLANE_REPO=ghcr.io/crossplane/crossplane
-
-      - name: Promote Image to xpkg.upbound.io/crossplane/crossplane:${{ inputs.channel }}
+      - name: Promote Image to xpkg.upbound.io/upbound/crossplane:${{ inputs.channel }}
         if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
         run: |
           earthly --strict \
           --push \
           --secret DOCKER_USER=${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }} \
           --secret DOCKER_PASSWORD=${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }} \
-          +ci-promote-image --CHANNEL=${{ inputs.channel }} --CROSSPLANE_VERSION=${{ inputs.version }} --CROSSPLANE_REPO=xpkg.upbound.io/crossplane/crossplane
+          +ci-promote-image --CHANNEL=${{ inputs.channel }} --CROSSPLANE_VERSION=${{ inputs.version }} --CROSSPLANE_REPO=xpkg.upbound.io/upbound/crossplane
 
-      - name: Promote Build Artifacts to https://releases.crossplane.io/${{ inputs.channel }}
+      - name: Promote Build Artifacts to https://releases.upbound.io/${{ inputs.channel }}
         if: env.AWS_USR != ''
         run: |
           earthly --strict \

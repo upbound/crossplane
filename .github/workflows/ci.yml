@@ -62,7 +62,7 @@ jobs:
           echo "EARTHLY_MAX_REMOTE_CACHE=true" >> $GITHUB_ENV
 
       - name: Generate Files
-        run: earthly --strict --remote-cache ghcr.io/crossplane/earthly-cache:${{ github.job }} +generate
+        run: earthly --strict --remote-cache ghcr.io/upbound/earthly-cache:${{ github.job }} +generate
 
       - name: Count Changed Files
         id: changed_files
@@ -108,7 +108,7 @@ jobs:
           echo "EARTHLY_MAX_REMOTE_CACHE=true" >> $GITHUB_ENV
 
       - name: Lint
-        run: earthly --strict --remote-cache ghcr.io/crossplane/earthly-cache:${{ github.job }} +lint
+        run: earthly --strict --remote-cache ghcr.io/upbound/earthly-cache:${{ github.job }} +lint
 
   codeql:
     runs-on: ubuntu-22.04
@@ -144,7 +144,7 @@ jobs:
           echo "EARTHLY_MAX_REMOTE_CACHE=true" >> $GITHUB_ENV
 
       - name: Run CodeQL
-        run: earthly --strict --remote-cache ghcr.io/crossplane/earthly-cache:${{ github.job }} +ci-codeql
+        run: earthly --strict --remote-cache ghcr.io/upbound/earthly-cache:${{ github.job }} +ci-codeql
 
       - name: Upload CodeQL Results to GitHub
         uses: github/codeql-action/upload-sarif@df409f7d9260372bd5f19e5b04e83cb3c43714ae # v3
@@ -211,7 +211,7 @@ jobs:
           echo "EARTHLY_MAX_REMOTE_CACHE=true" >> $GITHUB_ENV
 
       - name: Run Unit Tests
-        run: earthly --strict --remote-cache ghcr.io/crossplane/earthly-cache:${{ github.job }} +test
+        run: earthly --strict --remote-cache ghcr.io/upbound/earthly-cache:${{ github.job }} +test
 
       - name: Publish Unit Test Coverage
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
@@ -287,7 +287,7 @@ jobs:
 
       - name: Run E2E Tests
         run: |
-          earthly --strict --allow-privileged --remote-cache ghcr.io/crossplane/earthly-cache:${{ github.job }}-${{ matrix.test-suite}} \
+          earthly --strict --allow-privileged --remote-cache ghcr.io/upbound/earthly-cache:${{ github.job }}-${{ matrix.test-suite}} \
             +e2e --FLAGS="-test.failfast -fail-fast -prior-crossplane-version=${CROSSPLANE_PRIOR_VERSION} --test-suite ${{ matrix.test-suite }}"
 
       - name: Publish E2E Test Flakes
@@ -363,9 +363,9 @@ jobs:
         run: earthly +ci-version
 
       - name: Build and Push Artifacts
-        run: earthly --strict --remote-cache ghcr.io/crossplane/earthly-cache:${{ github.job }} +ci-artifacts --CROSSPLANE_VERSION=${CROSSPLANE_VERSION}
+        run: earthly --strict --remote-cache ghcr.io/upbound/earthly-cache:${{ github.job }} +ci-artifacts --CROSSPLANE_VERSION=${CROSSPLANE_VERSION}
 
-      - name: Push Artifacts to https://releases.crossplane.io/build/
+      - name: Push Artifacts to https://releases.upbound.io/build/
         if: env.AWS_USR != ''
         run: |
           earthly --strict \
@@ -373,7 +373,7 @@ jobs:
             --secret=AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_PSW }} \
             +ci-push-build-artifacts --AWS_DEFAULT_REGION=us-east-1 --CROSSPLANE_VERSION=${CROSSPLANE_VERSION} --BUILD_DIR=${GITHUB_REF##*/}
 
-      - name: Push Artifacts to https://releases.crossplane.io/master/ and https://charts.crossplane.io/master
+      - name: Push Artifacts to https://releases.upbound.io/master/ and https://charts.upbound.io/master
         if: env.AWS_USR != '' && github.ref == 'refs/heads/main'
         run: |
           earthly --strict \
@@ -381,7 +381,7 @@ jobs:
             --secret=AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_PSW }} \
             +ci-promote-build-artifacts --AWS_DEFAULT_REGION=us-east-1 --CROSSPLANE_VERSION=${CROSSPLANE_VERSION} --BUILD_DIR=${GITHUB_REF##*/} --CHANNEL=master
 
-      - name: Push Artifacts to https://releases.crossplane.io/preview/ and https://charts.crossplane.io/preview
+      - name: Push Artifacts to https://releases.upbound.io/preview/ and https://charts.upbound.io/preview
         if: env.AWS_USR != '' && github.ref == 'refs/heads/v2'
         run: |
           earthly --strict \

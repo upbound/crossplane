@@ -1,7 +1,7 @@
 # See https://docs.earthly.dev/docs/earthfile/features
 VERSION --try --raw-output 0.8
 
-PROJECT crossplane/crossplane
+PROJECT upbound/crossplane
 
 ARG --global GO_VERSION=1.23.7
 
@@ -370,9 +370,7 @@ ci-version:
 # binaries.
 ci-artifacts:
   BUILD +multiplatform-build \
-    --CROSSPLANE_REPO=index.docker.io/crossplane/crossplane \
-    --CROSSPLANE_REPO=ghcr.io/crossplane/crossplane \
-    --CROSSPLANE_REPO=xpkg.upbound.io/crossplane/crossplane
+    --CROSSPLANE_REPO=xpkg.upbound.io/upbound/crossplane
 
 # ci-codeql-setup sets up CodeQL for the ci-codeql target.
 ci-codeql-setup:
