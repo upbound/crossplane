@@ -59,12 +59,3 @@ jobs:
             --secret DOCKER_USER=${{ github.actor }} \
             --secret DOCKER_PASSWORD=${{ secrets.GITHUB_TOKEN }} \
             +ci-promote-image --CHANNEL=${{ inputs.channel }} --CROSSPLANE_VERSION=${{ inputs.version }} --CROSSPLANE_REPO=ghcr.io/upbound/crossplane
-
-      - name: Promote Image to xpkg.upbound.io/crossplane/crossplane:${{ inputs.channel }}
-        if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
-        run: |
-          earthly --strict \
-          --push \
-          --secret DOCKER_USER=${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }} \
-          --secret DOCKER_PASSWORD=${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }} \
-          +ci-promote-image --CHANNEL=${{ inputs.channel }} --CROSSPLANE_VERSION=${{ inputs.version }} --CROSSPLANE_REPO=xpkg.upbound.io/upbound/crossplane
