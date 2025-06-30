@@ -139,7 +139,7 @@ go-modules-tidy:
   FROM +go-modules
   CACHE --id go-build --sharing shared /root/.cache/go-build
   COPY generate.go .
-  COPY --dir apis/ cmd/ internal/ pkg/ test/ .
+  COPY --dir apis/ cmd/ internal/ test/ .
   RUN go mod tidy
   RUN go mod verify
   SAVE ARTIFACT go.mod AS LOCAL go.mod
@@ -184,7 +184,7 @@ go-build:
     SET ext = ".exe"
   END
   CACHE --id go-build --sharing shared /root/.cache/go-build
-  COPY --dir apis/ cmd/ internal/ pkg/ .
+  COPY --dir apis/ cmd/ internal/ .
   RUN go build -o crossplane${ext} ./cmd/crossplane
   RUN sha256sum crossplane${ext} | head -c 64 > crossplane${ext}.sha256
   RUN go build -o crank${ext} ./cmd/crank
@@ -224,7 +224,7 @@ go-build-e2e:
 go-test:
   FROM +go-modules
   CACHE --id go-build --sharing shared /root/.cache/go-build
-  COPY --dir apis/ cmd/ internal/ pkg/ .
+  COPY --dir apis/ cmd/ internal/ .
   RUN go test -covermode=count -coverprofile=coverage.txt ./...
   SAVE ARTIFACT coverage.txt AS LOCAL _output/tests/coverage.txt
 
@@ -237,12 +237,11 @@ go-lint:
   CACHE --id go-build --sharing shared /root/.cache/go-build
   RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin ${GOLANGCI_LINT_VERSION}
   COPY .golangci.yml .
-  COPY --dir apis/ cmd/ internal/ pkg/ test/ .
+  COPY --dir apis/ cmd/ internal/ test/ .
   RUN golangci-lint run --fix
   SAVE ARTIFACT apis AS LOCAL apis
   SAVE ARTIFACT cmd AS LOCAL cmd
   SAVE ARTIFACT internal AS LOCAL internal
-  SAVE ARTIFACT pkg AS LOCAL pkg
   SAVE ARTIFACT test AS LOCAL test
 
 # image builds the Crossplane OCI image for your native architecture.
@@ -256,7 +255,7 @@ image:
   ARG TARGETPLATFORM
   ARG TARGETARCH
   ARG TARGETOS
-  FROM --platform=${TARGETPLATFORM} gcr.io/distroless/static@sha256:5c7e2b465ac6a2a4e5f4f7f722ce43b147dabe87cb21ac6c4007ae5178a1fa58
+  FROM --platform=${TARGETPLATFORM} gcr.io/distroless/static@sha256:b7b9a6953e7bed6baaf37329331051d7bdc1b99c885f6dbeb72d75b1baad54f9
   COPY --platform=${NATIVEPLATFORM} (+go-build/crossplane --GOOS=${TARGETOS} --GOARCH=${TARGETARCH}) /usr/local/bin/
   COPY --dir cluster/crds/ /crds
   COPY --dir cluster/webhookconfigurations/ /webhookconfigurations
@@ -317,6 +316,22 @@ kubectl-setup:
   FROM --platform=${NATIVEPLATFORM} curlimages/curl:8.8.0
   RUN curl -fsSL https://dl.k8s.io/${KUBECTL_VERSION}/kubernetes-client-${TARGETOS}-${TARGETARCH}.tar.gz|tar zx
   SAVE ARTIFACT kubernetes/client/bin/kubectl
+
+# Ko init will create the kodata dir for crd and webhook files in the crossplane controller binary path.
+ko-init:
+  FROM alpine:3.20
+  COPY (+go-generate/crds) ./kodata/crds
+  COPY --dir cluster/webhookconfigurations ./kodata/
+  RUN echo && \
+      echo "Now build the helm chart and apply the template in dry run mode through ko:" && \
+      echo "   earthly +helm-build" && \
+      echo "   helm template --dry-run --namespace crossplane-system --set image.ignoreTag=true \\" && \
+      echo "     --set image.repository=ko://github.com/crossplane/crossplane/cmd/crossplane \\" && \
+      echo "     --set extraEnvVarsCrossplaneInit.CRDS_PATH=/var/run/ko/crds \\" && \
+      echo "     --set extraEnvVarsCrossplaneInit.WEBHOOK_CONFIGS_PATH=/var/run/ko/webhookconfigurations \\" && \
+      echo "     crossplane ./_output/charts/crossplane*.tgz | ko apply -f -" && \
+      echo
+  SAVE ARTIFACT ./kodata AS LOCAL cmd/crossplane/kodata
 
 # kind-setup is used by other targets to setup kind.
 kind-setup:
@@ -409,7 +424,7 @@ ci-codeql:
   END
   COPY --dir +ci-codeql-setup/codeql /codeql
   CACHE --id go-build --sharing shared /root/.cache/go-build
-  COPY --dir apis/ cmd/ internal/ pkg/ .
+  COPY --dir apis/ cmd/ internal/ .
   RUN /codeql/codeql database create /codeqldb --language=go
   RUN /codeql/codeql database analyze /codeqldb --threads=0 --format=sarif-latest --output=go.sarif --sarif-add-baseline-file-info
   SAVE ARTIFACT go.sarif AS LOCAL _output/codeql/go.sarif

@@ -29,9 +29,9 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/fake"
-	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 
+	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	"github.com/crossplane/crossplane/internal/xcrd"
 )
 
@@ -278,8 +278,9 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 			args: args{
 				xr: &fake.Composite{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "cool-xr",
-						UID:  "somewhat-random",
+						Namespace: "ns",
+						Name:      "cool-xr",
+						UID:       "somewhat-random",
 						Labels: map[string]string{
 							xcrd.LabelKeyNamePrefixForComposed: "prefix",
 							xcrd.LabelKeyClaimName:             "name",
@@ -292,6 +293,7 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 			want: want{
 				cd: &fake.Composed{
 					ObjectMeta: metav1.ObjectMeta{
+						Namespace:    "ns",
 						GenerateName: "prefix-",
 						OwnerReferences: []metav1.OwnerReference{{
 							Controller:         ptr.To(true),
@@ -303,6 +305,39 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 							xcrd.LabelKeyNamePrefixForComposed: "prefix",
 							xcrd.LabelKeyClaimName:             "name",
 							xcrd.LabelKeyClaimNamespace:        "namespace",
+						},
+					},
+				},
+			},
+		},
+		"NoClaimLabels": {
+			reason: "MR should not have claim labels when XR doesn't have them",
+			args: args{
+				xr: &fake.Composite{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "ns",
+						Name:      "cool-xr",
+						UID:       "somewhat-random",
+						Labels: map[string]string{
+							xcrd.LabelKeyNamePrefixForComposed: "prefix",
+						},
+					},
+				},
+				cd: &fake.Composed{},
+			},
+			want: want{
+				cd: &fake.Composed{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:    "ns",
+						GenerateName: "prefix-",
+						OwnerReferences: []metav1.OwnerReference{{
+							Controller:         ptr.To(true),
+							BlockOwnerDeletion: ptr.To(true),
+							UID:                "somewhat-random",
+							Name:               "cool-xr",
+						}},
+						Labels: map[string]string{
+							xcrd.LabelKeyNamePrefixForComposed: "prefix",
 						},
 					},
 				},

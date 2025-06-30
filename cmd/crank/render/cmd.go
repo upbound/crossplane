@@ -31,9 +31,10 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 
+	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
+	"github.com/crossplane/crossplane/internal/xcrd"
 )
 
 // Cmd arguments and flags for render subcommand.
@@ -53,7 +54,8 @@ type Cmd struct {
 	IncludeContext         bool              `help:"Include the context in the rendered output as a resource of kind: Context."                                                                short:"c"`
 	FunctionCredentials    string            `help:"A YAML file or directory of YAML files specifying credentials to use for Functions to render the XR."                                      placeholder:"PATH" predictor:"yaml_file_or_directory" type:"path"`
 
-	Timeout time.Duration `default:"1m" help:"How long to run before timing out."`
+	Timeout time.Duration `default:"1m"                                                                                                     help:"How long to run before timing out."`
+	XRD     string        `help:"A YAML file specifying the CompositeResourceDefinition (XRD) that defines the XR's schema and properties." optional:""                               placeholder:"PATH" type:"existingfile"`
 
 	fs afero.Fs
 }
@@ -151,14 +153,6 @@ func (c *Cmd) Run(k *kong.Context, log logging.Logger) error { //nolint:gocognit
 		return errors.Errorf("composition's compositeTypeRef.apiVersion (%s) does not match XR's apiVersion (%s)", compRef.APIVersion, xrGVK.GroupVersion().String())
 	}
 
-	warns, errs := comp.Validate()
-	for _, warn := range warns {
-		_, _ = fmt.Fprintf(k.Stderr, "WARN(composition): %s\n", warn)
-	}
-	if len(errs) > 0 {
-		return errors.Wrapf(errs.ToAggregate(), "invalid Composition %q", comp.GetName())
-	}
-
 	// check if XR's matchLabels have corresponding label at composition
 	xrSelector := xr.GetCompositionSelector()
 	if xrSelector != nil {
@@ -174,7 +168,7 @@ func (c *Cmd) Run(k *kong.Context, log logging.Logger) error { //nolint:gocognit
 		}
 	}
 
-	if m := comp.Spec.Mode; m == nil || *m != v1.CompositionModePipeline {
+	if comp.Spec.Mode != v1.CompositionModePipeline {
 		return errors.Errorf("render only supports Composition Function pipelines: Composition %q must use spec.mode: Pipeline", comp.GetName())
 	}
 
@@ -182,7 +176,19 @@ func (c *Cmd) Run(k *kong.Context, log logging.Logger) error { //nolint:gocognit
 	if err != nil {
 		return errors.Wrapf(err, "cannot load functions from %q", c.Functions)
 	}
-
+	if c.XRD != "" {
+		xrd, err := LoadXRD(c.fs, c.XRD)
+		if err != nil {
+			return errors.Wrapf(err, "cannot load XRD from %q", c.XRD)
+		}
+		crd, err := xcrd.ForCompositeResource(xrd)
+		if err != nil {
+			return errors.Wrapf(err, "cannot derive composite CRD from XRD %q", xrd.GetName())
+		}
+		if err := DefaultValues(xr.UnstructuredContent(), xr.GetAPIVersion(), *crd); err != nil {
+			return errors.Wrapf(err, "cannot default values for XR %q", xr.GetName())
+		}
+	}
 	fcreds := []corev1.Secret{}
 	if c.FunctionCredentials != "" {
 		fcreds, err = LoadCredentials(c.fs, c.FunctionCredentials)
