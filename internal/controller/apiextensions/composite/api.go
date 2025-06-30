@@ -24,7 +24,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -76,13 +78,13 @@ func NewAPIFilteredSecretPublisher(c client.Client, filter []string) *APIFiltere
 
 // PublishConnection publishes the supplied ConnectionDetails to the Secret
 // referenced in the resource.
-func (a *APIFilteredSecretPublisher) PublishConnection(ctx context.Context, o resource.ConnectionSecretOwner, c managed.ConnectionDetails) (bool, error) {
+func (a *APIFilteredSecretPublisher) PublishConnection(ctx context.Context, o ConnectionSecretOwner, c managed.ConnectionDetails) (bool, error) {
 	// This resource does not want to expose a connection secret.
 	if o.GetWriteConnectionSecretToReference() == nil {
 		return false, nil
 	}
 
-	s := resource.ConnectionSecretFor(o, o.GetObjectKind().GroupVersionKind())
+	s := ConnectionSecretFor(o, o.GetObjectKind().GroupVersionKind())
 	m := map[string]bool{}
 	for _, key := range a.filter {
 		m[key] = true
@@ -116,11 +118,20 @@ func (a *APIFilteredSecretPublisher) PublishConnection(ctx context.Context, o re
 	return true, nil
 }
 
-// UnpublishConnection is no-op since PublishConnection only creates resources
-// that will be garbage collected by Kubernetes when the managed resource is
-// deleted.
-func (a *APIFilteredSecretPublisher) UnpublishConnection(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) error {
-	return nil
+// ConnectionSecretFor creates a connection for the supplied
+// ConnectionSecretOwner, assumed to be of the supplied kind. The secret is
+// written to 'default' namespace if the ConnectionSecretOwner does not specify
+// a namespace.
+func ConnectionSecretFor(o ConnectionSecretOwner, kind schema.GroupVersionKind) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:       o.GetWriteConnectionSecretToReference().Namespace,
+			Name:            o.GetWriteConnectionSecretToReference().Name,
+			OwnerReferences: []metav1.OwnerReference{meta.AsController(meta.TypedReferenceTo(o, kind))},
+		},
+		Type: resource.SecretTypeConnection,
+		Data: make(map[string][]byte),
+	}
 }
 
 // An APIRevisionFetcher selects the appropriate CompositionRevision for a
@@ -365,16 +376,22 @@ type APIConfigurator struct {
 // Configure any required fields that were omitted from the composite resource
 // by copying them from its composition.
 func (c *APIConfigurator) Configure(ctx context.Context, cp resource.Composite, rev *v1.CompositionRevision) error {
-	apiVersion, kind := cp.GetObjectKind().GroupVersionKind().ToAPIVersionAndKind()
+	// Only legacy XRs support writing connection secrets.
+	lcp, ok := cp.(resource.LegacyComposite)
+	if !ok {
+		return nil
+	}
+
+	apiVersion, kind := lcp.GetObjectKind().GroupVersionKind().ToAPIVersionAndKind()
 	if rev.Spec.CompositeTypeRef.APIVersion != apiVersion || rev.Spec.CompositeTypeRef.Kind != kind {
 		return errors.New(errCompositionNotCompatible)
 	}
 
-	if cp.GetWriteConnectionSecretToReference() != nil || rev.Spec.WriteConnectionSecretsToNamespace == nil {
+	if lcp.GetWriteConnectionSecretToReference() != nil || rev.Spec.WriteConnectionSecretsToNamespace == nil {
 		return nil
 	}
 
-	cp.SetWriteConnectionSecretToReference(&xpv1.SecretReference{
+	lcp.SetWriteConnectionSecretToReference(&xpv1.SecretReference{
 		Name:      string(cp.GetUID()),
 		Namespace: *rev.Spec.WriteConnectionSecretsToNamespace,
 	})
