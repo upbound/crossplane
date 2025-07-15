@@ -315,7 +315,7 @@ jobs:
           timeout_minutes: 45  # Per attempt
           max_attempts: 3
           command: |
-            earthly --strict --allow-privileged --remote-cache ghcr.io/upbound/earthly-cache:${{ github.job }}-${{ matrix.test-area}}-${{ matrix.test-suite}} \
+            earthly --strict --allow-privileged --remote-cache ghcr.io/upbound/crossplane-earthly-cache:${{ github.job }}-${{ matrix.test-area}}-${{ matrix.test-suite}} \
               +e2e --GOTESTSUM_FORMAT="testname" --FLAGS="-test.failfast -fail-fast -prior-crossplane-version=${CROSSPLANE_PRIOR_VERSION} --test-suite ${{ matrix.test-suite }} -labels area=${{ matrix.test-area }}"
 
       - name: Publish E2E Test Flakes
