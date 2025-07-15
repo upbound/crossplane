@@ -48,18 +48,16 @@ const (
 
 // FunctionHooks performs runtime operations for function packages.
 type FunctionHooks struct {
-	client          resource.ClientApplicator
-	defaultRegistry string
+	client resource.ClientApplicator
 }
 
 // NewFunctionHooks returns a new FunctionHooks.
-func NewFunctionHooks(client client.Client, defaultRegistry string) *FunctionHooks {
+func NewFunctionHooks(client client.Client) *FunctionHooks {
 	return &FunctionHooks{
 		client: resource.ClientApplicator{
 			Client:     client,
 			Applicator: resource.NewAPIPatchingApplicator(client),
 		},
-		defaultRegistry: defaultRegistry,
 	}
 }
 
@@ -68,6 +66,9 @@ func (h *FunctionHooks) Pre(ctx context.Context, pr v1.PackageRevisionWithRuntim
 	if pr.GetDesiredState() != v1.PackageRevisionActive {
 		return nil
 	}
+
+	pr.SetObservedTLSServerSecretName(pr.GetTLSServerSecretName())
+	pr.SetObservedTLSClientSecretName(pr.GetTLSClientSecretName())
 
 	// Ensure Prerequisites
 	// Note(turkenh): We need certificates have generated when we get to the
@@ -123,11 +124,12 @@ func (h *FunctionHooks) Post(ctx context.Context, pr v1.PackageRevisionWithRunti
 
 	sa := build.ServiceAccount()
 
-	// Determine the function's image, taking into account the default registry.
-	image, err := name.ParseReference(pr.GetResolvedSource(), name.WithDefaultRegistry(h.defaultRegistry))
+	// Determine the function's image.
+	image, err := name.ParseReference(pr.GetResolvedSource(), name.StrictValidation)
 	if err != nil {
 		return errors.Wrap(err, errParseFunctionImage)
 	}
+
 	d := build.Deployment(sa.Name, functionDeploymentOverrides(image.Name())...)
 	// Create/Apply the SA only if the deployment references it.
 	// This is to avoid creating a SA that is NOT used by the deployment when
@@ -139,6 +141,7 @@ func (h *FunctionHooks) Post(ctx context.Context, pr v1.PackageRevisionWithRunti
 			return errors.Wrap(err, errApplyFunctionSA)
 		}
 	}
+
 	if err := h.client.Apply(ctx, d); err != nil {
 		return errors.Wrap(err, errApplyFunctionDeployment)
 	}
@@ -148,9 +151,11 @@ func (h *FunctionHooks) Post(ctx context.Context, pr v1.PackageRevisionWithRunti
 			if c.Status == corev1.ConditionTrue {
 				return nil
 			}
+
 			return errors.Errorf(errFmtUnavailableFunctionDeployment, c.Message)
 		}
 	}
+
 	return errors.New(errNoAvailableConditionFunctionDeployment)
 }
 

@@ -58,6 +58,7 @@ func TestReconcile(t *testing.T) {
 		mgr  manager.Manager
 		opts []ReconcilerOption
 	}
+
 	type want struct {
 		r   reconcile.Result
 		err error
@@ -263,11 +264,12 @@ func TestReconcile(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			r := NewReconciler(tc.args.mgr, append(tc.args.opts, WithLogger(testLog))...)
-			got, err := r.Reconcile(context.Background(), reconcile.Request{})
 
+			got, err := r.Reconcile(context.Background(), reconcile.Request{})
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nr.Reconcile(...): -want error, +got error:\n%s", tc.reason, diff)
 			}
+
 			if diff := cmp.Diff(tc.want.r, got, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nr.Reconcile(...): -want, +got:\n%s", tc.reason, diff)
 			}
@@ -395,40 +397,46 @@ func TestClusterRolesDiffer(t *testing.T) {
 
 func TestOrgDiffer(t *testing.T) {
 	cases := map[string]struct {
-		registry string
-		a        string
-		b        string
-		want     bool
+		a    string
+		b    string
+		want bool
 	}{
-		"SameOrg": {
-			registry: "xpkg.example.org",
-			a:        "xpkg.example.org/cool/provider:v1.0.0",
-			b:        "cool/other-provider:v1.0.0",
-			want:     false,
+		"SameOrgWithRegistry": {
+			a:    "xpkg.example.org/cool/provider:v1.0.0",
+			b:    "xpkg.example.org/cool/other-provider:v1.0.0",
+			want: false,
 		},
-		"DifferentOrgs": {
-			registry: "xpkg.example.org",
-			a:        "cool/provider:v1.0.0",
-			b:        "evil/other-provider:v1.0.0",
-			want:     true,
+		"SameOrgWithNoRegistry": {
+			a:    "cool/provider:v1.0.0",
+			b:    "cool/other-provider:v1.0.0",
+			want: false,
 		},
-		"DifferentRegistries": {
-			registry: "xpkg.example.org",
-			a:        "xpkg.example.org/cool/provider:v1.0.0",
-			b:        "index.docker.io/cool/other-provider:v1.0.0",
-			want:     true,
+		"DifferentOrgsWithSameRegistry": {
+			a:    "xpkg.example.org/cool/provider:v1.0.0",
+			b:    "xpkg.example.org/evil/other-provider:v1.0.0",
+			want: true,
 		},
-		"DifferentRegistriesWithDefaulting": {
-			registry: "xpkg.example.org",
-			a:        "index.docker.io/cool/provider:v1.0.0",
-			b:        "cool/other-provider:v1.0.0",
-			want:     true,
+		"DifferentOrgsWithDifferentRegistries": {
+			a:    "xpkg.example.org/cool/provider:v1.0.0",
+			b:    "index.docker.io/cool/other-provider:v1.0.0",
+			want: true,
+		},
+		"DifferentOrgsWithNoRegistryOnA": {
+			a:    "cool/provider:v1.0.0",
+			b:    "xpkg.example.org/cool/other-provider:v1.0.0",
+			want: true,
+		},
+		"DifferentOrgsWithNoRegistryOnB": {
+			a:    "index.docker.io/cool/provider:v1.0.0",
+			b:    "cool/other-provider:v1.0.0",
+			want: true,
 		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			d := OrgDiffer{DefaultRegistry: tc.registry}
+			d := OrgDiffer{}
+
 			got := d.Differs(tc.a, tc.b)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("SameOrg(...): -want, +got\n:%s", diff)

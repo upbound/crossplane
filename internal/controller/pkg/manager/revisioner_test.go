@@ -88,15 +88,15 @@ func TestPackageRevisioner(t *testing.T) {
 					},
 					Spec: v1.ProviderSpec{
 						PackageSpec: v1.PackageSpec{
-							Package:           "crossplane/provider-aws:latest",
+							Package:           "xpkg.crossplane.io/crossplane/provider-aws:latest",
 							PackagePullPolicy: &pullIfNotPresent,
 						},
 					},
 					Status: v1.ProviderStatus{
 						PackageStatus: v1.PackageStatus{
-							ResolvedPackage:   "crossplane/provider-aws:latest",
+							ResolvedPackage:   "xpkg.crossplane.io/crossplane/provider-aws:latest",
 							CurrentRevision:   "return-me",
-							CurrentIdentifier: "crossplane/provider-aws:latest",
+							CurrentIdentifier: "xpkg.crossplane.io/crossplane/provider-aws:latest",
 						},
 					},
 				},
@@ -127,7 +127,7 @@ func TestPackageRevisioner(t *testing.T) {
 					},
 					Spec: v1.ProviderSpec{
 						PackageSpec: v1.PackageSpec{
-							Package:           "xpkg.upbound.io/crossplane/provider-aws:latest",
+							Package:           "xpkg.crossplane.io/crossplane/provider-aws:latest",
 							PackagePullPolicy: &pullIfNotPresent,
 						},
 					},
@@ -151,13 +151,13 @@ func TestPackageRevisioner(t *testing.T) {
 					},
 					Spec: v1.ProviderSpec{
 						PackageSpec: v1.PackageSpec{
-							Package:           "crossplane-contrib/provider-nop@sha256:ecc25c121431dfc7058754427f97c034ecde26d4aafa0da16d258090e0443904",
+							Package:           "xpkg.crossplane.io/crossplane-contrib/provider-nop@sha256:ecc25c121431dfc7058754427f97c034ecde26d4aafa0da16d258090e0443904",
 							PackagePullPolicy: &pullIfNotPresent,
 						},
 					},
 					Status: v1.ProviderStatus{
 						PackageStatus: v1.PackageStatus{
-							ResolvedPackage: "crossplane-contrib/provider-nop@sha256:ecc25c121431dfc7058754427f97c034ecde26d4aafa0da16d258090e0443904",
+							ResolvedPackage: "xpkg.crossplane.io/crossplane-contrib/provider-nop@sha256:ecc25c121431dfc7058754427f97c034ecde26d4aafa0da16d258090e0443904",
 						},
 					},
 				},
@@ -203,12 +203,12 @@ func TestPackageRevisioner(t *testing.T) {
 				pkg: &v1.Provider{
 					Spec: v1.ProviderSpec{
 						PackageSpec: v1.PackageSpec{
-							Package: "test/test:test",
+							Package: "xpkg.crossplane.io/test/test:test",
 						},
 					},
 					Status: v1.ProviderStatus{
 						PackageStatus: v1.PackageStatus{
-							ResolvedPackage: "test/test:test",
+							ResolvedPackage: "xpkg.crossplane.io/test/test:test",
 						},
 					},
 				},
@@ -222,11 +222,12 @@ func TestPackageRevisioner(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			r := NewPackageRevisioner(tc.args.f)
-			h, err := r.Revision(context.TODO(), tc.args.pkg, tc.args.pullSecretFromConfig)
 
+			h, err := r.Revision(context.TODO(), tc.args.pkg, tc.args.pullSecretFromConfig)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nr.Name(...): -want error, +got error:\n%s", tc.reason, diff)
 			}
+
 			if diff := cmp.Diff(tc.want.digest, h, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nr.Name(...): -want, +got:\n%s", tc.reason, diff)
 			}

@@ -29,9 +29,9 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/claim"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
+
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	"github.com/crossplane/crossplane/internal/names"
 	"github.com/crossplane/crossplane/internal/xcrd"
@@ -151,9 +151,11 @@ func (s *ClientSideCompositeSyncer) Sync(ctx context.Context, cm *claim.Unstruct
 	// then crashed before saving a reference to it. We'd create another XR on
 	// the next reconcile.
 	existing := cm.GetResourceReference()
+
 	proposed := xr.GetReference()
 	if !cmp.Equal(existing, proposed) {
 		cm.SetResourceReference(proposed)
+
 		if err := s.client.Update(ctx, cm); err != nil {
 			return errors.Wrap(err, errUpdateClaim)
 		}
