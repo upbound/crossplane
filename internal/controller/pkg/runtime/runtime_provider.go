@@ -49,18 +49,16 @@ const (
 
 // ProviderHooks performs runtime operations for provider packages.
 type ProviderHooks struct {
-	client          resource.ClientApplicator
-	defaultRegistry string
+	client resource.ClientApplicator
 }
 
 // NewProviderHooks returns a new ProviderHooks.
-func NewProviderHooks(client client.Client, defaultRegistry string) *ProviderHooks {
+func NewProviderHooks(client client.Client) *ProviderHooks {
 	return &ProviderHooks{
 		client: resource.ClientApplicator{
 			Client:     client,
 			Applicator: resource.NewAPIPatchingApplicator(client),
 		},
-		defaultRegistry: defaultRegistry,
 	}
 }
 
@@ -69,6 +67,9 @@ func (h *ProviderHooks) Pre(ctx context.Context, pr v1.PackageRevisionWithRuntim
 	if pr.GetDesiredState() != v1.PackageRevisionActive {
 		return nil
 	}
+
+	pr.SetObservedTLSServerSecretName(pr.GetTLSServerSecretName())
+	pr.SetObservedTLSClientSecretName(pr.GetTLSClientSecretName())
 
 	// Ensure Prerequisites
 	// Note(turkenh): We need certificates have generated when we get to the
@@ -101,6 +102,7 @@ func (h *ProviderHooks) Pre(ctx context.Context, pr v1.PackageRevisionWithRuntim
 	if err := h.client.Apply(ctx, secClient); err != nil {
 		return errors.Wrap(err, errApplyProviderSecret)
 	}
+
 	if err := h.client.Apply(ctx, secServer); err != nil {
 		return errors.Wrap(err, errApplyProviderSecret)
 	}
@@ -123,11 +125,12 @@ func (h *ProviderHooks) Post(ctx context.Context, pr v1.PackageRevisionWithRunti
 
 	sa := build.ServiceAccount()
 
-	// Determine the function's image, taking into account the default registry.
-	image, err := name.ParseReference(pr.GetResolvedSource(), name.WithDefaultRegistry(h.defaultRegistry))
+	// Determine the function's image.
+	image, err := name.ParseReference(pr.GetResolvedSource(), name.StrictValidation)
 	if err != nil {
 		return errors.Wrap(err, errParseProviderImage)
 	}
+
 	d := build.Deployment(sa.Name, providerDeploymentOverrides(pr, image.Name())...)
 	// Create/Apply the SA only if the deployment references it.
 	// This is to avoid creating a SA that is not used by the deployment when
@@ -139,6 +142,7 @@ func (h *ProviderHooks) Post(ctx context.Context, pr v1.PackageRevisionWithRunti
 			return errors.Wrap(err, errApplyProviderSA)
 		}
 	}
+
 	if err := h.client.Apply(ctx, d); err != nil {
 		return errors.Wrap(err, errApplyProviderDeployment)
 	}
@@ -148,9 +152,11 @@ func (h *ProviderHooks) Post(ctx context.Context, pr v1.PackageRevisionWithRunti
 			if c.Status == corev1.ConditionTrue {
 				return nil
 			}
+
 			return errors.Errorf(errFmtUnavailableProviderDeployment, c.Message)
 		}
 	}
+
 	return errors.New(errNoAvailableConditionProviderDeployment)
 }
 
@@ -209,7 +215,7 @@ func providerDeploymentOverrides(pr v1.PackageRevisionWithRuntime, image string)
 
 	do = append(do, DeploymentRuntimeWithOptionalImage(image))
 
-	if pr.GetTLSClientSecretName() != nil {
+	if pr.GetObservedTLSClientSecretName() != nil {
 		do = append(do, DeploymentRuntimeWithAdditionalEnvironments([]corev1.EnvVar{
 			// for backward compatibility with existing providers, we set the
 			// environment variable ESS_TLS_CERTS_DIR to the same value as
@@ -221,7 +227,7 @@ func providerDeploymentOverrides(pr v1.PackageRevisionWithRuntime, image string)
 		}))
 	}
 
-	if pr.GetTLSServerSecretName() != nil {
+	if pr.GetObservedTLSServerSecretName() != nil {
 		do = append(do, DeploymentRuntimeWithAdditionalPorts([]corev1.ContainerPort{
 			{
 				Name:          WebhookPortName,
@@ -258,5 +264,6 @@ func applySA(ctx context.Context, cl resource.ClientApplicator, sa *corev1.Servi
 			}
 		}
 	}
+
 	return cl.Apply(ctx, sa)
 }

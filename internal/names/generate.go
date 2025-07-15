@@ -26,7 +26,6 @@ import (
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
 )
 
@@ -89,12 +88,14 @@ func (r *nameGenerator) GenerateName(ctx context.Context, cd resource.Object) er
 		name := r.namer.GenerateName(cd.GetGenerateName())
 		obj := composite.Unstructured{}
 		obj.SetGroupVersionKind(cd.GetObjectKind().GroupVersionKind())
+
 		err := r.reader.Get(ctx, client.ObjectKey{Name: name}, &obj)
 		if kerrors.IsNotFound(err) {
 			// The name is available.
 			cd.SetName(name)
 			return nil
 		}
+
 		if err != nil {
 			return err
 		}

@@ -65,13 +65,20 @@ type ProviderStatus struct {
 type ProviderList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Provider `json:"items"`
+
+	Items []Provider `json:"items"`
 }
 
 // ProviderRevisionSpec specifies configuration for a ProviderRevision.
 type ProviderRevisionSpec struct {
 	PackageRevisionSpec        `json:",inline"`
 	PackageRevisionRuntimeSpec `json:",inline"`
+}
+
+// ProviderRevisionStatus represents the observed state of a ProviderRevision.
+type ProviderRevisionStatus struct {
+	PackageRevisionStatus        `json:",inline"`
+	PackageRevisionRuntimeStatus `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
@@ -98,8 +105,8 @@ type ProviderRevision struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ProviderRevisionSpec  `json:"spec,omitempty"`
-	Status PackageRevisionStatus `json:"status,omitempty"`
+	Spec   ProviderRevisionSpec   `json:"spec,omitempty"`
+	Status ProviderRevisionStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -108,5 +115,6 @@ type ProviderRevision struct {
 type ProviderRevisionList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ProviderRevision `json:"items"`
+
+	Items []ProviderRevision `json:"items"`
 }

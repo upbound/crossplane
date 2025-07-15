@@ -35,12 +35,11 @@ import (
 const (
 	namespace = "crossplane-system"
 
-	providerImage        = "crossplane/provider-foo:v1.2.3"
-	providerName         = "upbound-provider-foo"
-	providerMetaName     = "provider-foo"
+	providerImage        = "xpkg.crossplane.io/crossplane/provider-foo:v1.2.3"
+	providerName         = "crossplane-provider-foo"
 	providerRevisionName = "provider-foo-1234"
 
-	functionImage        = "crossplane/function-foo:v1.2.3"
+	functionImage        = "xpkg.crossplane.io/crossplane/function-foo:v1.2.3"
 	functionName         = "function-foo"
 	functionRevisionName = "function-foo-1234"
 
@@ -64,7 +63,9 @@ var (
 			PackageRevisionSpec: v1.PackageRevisionSpec{
 				Package: providerImage,
 			},
-			PackageRevisionRuntimeSpec: v1.PackageRevisionRuntimeSpec{
+		},
+		Status: v1.ProviderRevisionStatus{
+			PackageRevisionRuntimeStatus: v1.PackageRevisionRuntimeStatus{
 				TLSServerSecretName: ptr.To(tlsServerSecretName),
 				TLSClientSecretName: ptr.To(tlsClientSecretName),
 			},
@@ -86,7 +87,9 @@ var (
 			PackageRevisionSpec: v1.PackageRevisionSpec{
 				Package: functionImage,
 			},
-			PackageRevisionRuntimeSpec: v1.PackageRevisionRuntimeSpec{
+		},
+		Status: v1.FunctionRevisionStatus{
+			PackageRevisionRuntimeStatus: v1.PackageRevisionRuntimeStatus{
 				TLSServerSecretName: ptr.To(tlsServerSecretName),
 			},
 		},
@@ -99,9 +102,11 @@ func TestRuntimeManifestBuilderDeployment(t *testing.T) {
 		overrides          []DeploymentOverride
 		serviceAccountName string
 	}
+
 	type want struct {
 		want *appsv1.Deployment
 	}
+
 	cases := map[string]struct {
 		reason string
 		args   args
@@ -351,9 +356,11 @@ func TestRuntimeManifestBuilderService(t *testing.T) {
 		overrides          []ServiceOverride
 		serviceAccountName string
 	}
+
 	type want struct {
 		want *corev1.Service
 	}
+
 	cases := map[string]struct {
 		reason string
 		args   args

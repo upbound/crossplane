@@ -36,7 +36,6 @@ import (
 	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
 	"github.com/crossplane/crossplane/internal/controller/pkg/revision"
-	"github.com/crossplane/crossplane/internal/xpkg"
 )
 
 func TestFunctionPreHook(t *testing.T) {
@@ -109,6 +108,9 @@ func TestFunctionPreHook(t *testing.T) {
 					},
 					Status: v1.FunctionRevisionStatus{
 						Endpoint: fmt.Sprintf(ServiceEndpointFmt, "some-service", "some-namespace", revision.ServicePort),
+						PackageRevisionRuntimeStatus: v1.PackageRevisionRuntimeStatus{
+							TLSServerSecretName: ptr.To("some-server-secret"),
+						},
 					},
 				},
 			},
@@ -117,12 +119,13 @@ func TestFunctionPreHook(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			h := NewFunctionHooks(tc.args.client, xpkg.DefaultRegistry)
-			err := h.Pre(context.TODO(), tc.args.rev, tc.args.manifests)
+			h := NewFunctionHooks(tc.args.client)
 
+			err := h.Pre(context.TODO(), tc.args.rev, tc.args.manifests)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nh.Pre(...): -want error, +got error:\n%s", tc.reason, diff)
 			}
+
 			if diff := cmp.Diff(tc.want.rev, tc.args.rev, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nh.Pre(...): -want, +got:\n%s", tc.reason, diff)
 			}
@@ -581,12 +584,13 @@ func TestFunctionPostHook(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			h := NewFunctionHooks(tc.args.client, xpkg.DefaultRegistry)
-			err := h.Post(context.TODO(), tc.args.rev, tc.args.manifests)
+			h := NewFunctionHooks(tc.args.client)
 
+			err := h.Post(context.TODO(), tc.args.rev, tc.args.manifests)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nh.Pre(...): -want error, +got error:\n%s", tc.reason, diff)
 			}
+
 			if diff := cmp.Diff(tc.want.rev, tc.args.rev, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nh.Pre(...): -want, +got:\n%s", tc.reason, diff)
 			}
@@ -685,12 +689,13 @@ func TestFunctionDeactivateHook(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			h := NewFunctionHooks(tc.args.client, xpkg.DefaultRegistry)
-			err := h.Deactivate(context.TODO(), tc.args.rev, tc.args.manifests)
+			h := NewFunctionHooks(tc.args.client)
 
+			err := h.Deactivate(context.TODO(), tc.args.rev, tc.args.manifests)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nh.Pre(...): -want error, +got error:\n%s", tc.reason, diff)
 			}
+
 			if diff := cmp.Diff(tc.want.rev, tc.args.rev, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nh.Pre(...): -want, +got:\n%s", tc.reason, diff)
 			}
