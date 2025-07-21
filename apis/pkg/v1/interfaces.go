@@ -43,6 +43,15 @@ const (
 	// revisions, and can be used to select all provider revisions that belong
 	// to a particular family. It is not added to providers, only revisions.
 	LabelProviderFamily = "pkg.crossplane.io/provider-family"
+
+	// LabelProvider is used as the key for the provider name label.
+	LabelProvider = "pkg.crossplane.io/provider"
+
+	// LabelFunction is used as the key for the function name label.
+	LabelFunction = "pkg.crossplane.io/function"
+
+	// LabelRevision is used as the key for the package revision name label.
+	LabelRevision = "pkg.crossplane.io/revision"
 )
 
 var (
@@ -562,6 +571,9 @@ type PackageRevision interface { //nolint:interfacebloat // TODO(negz): Could we
 
 	GetResolvedSource() string
 	SetResolvedSource(s string)
+
+	GetCapabilities() []string
+	SetCapabilities(caps []string)
 }
 
 // GetCondition of this ProviderRevision.
@@ -756,6 +768,16 @@ func (p *ProviderRevision) SetResolvedSource(s string) {
 	p.Status.ResolvedPackage = s
 }
 
+// GetCapabilities of this ProviderRevision.
+func (p *ProviderRevision) GetCapabilities() []string {
+	return p.Status.Capabilities
+}
+
+// SetCapabilities of this ProviderRevision.
+func (p *ProviderRevision) SetCapabilities(caps []string) {
+	p.Status.Capabilities = caps
+}
+
 // GetCondition of this ConfigurationRevision.
 func (p *ConfigurationRevision) GetCondition(ct xpv1.ConditionType) xpv1.Condition {
 	return p.Status.GetCondition(ct)
@@ -896,6 +918,16 @@ func (p *ConfigurationRevision) GetResolvedSource() string {
 // SetResolvedSource of this ConfigurationRevision.
 func (p *ConfigurationRevision) SetResolvedSource(s string) {
 	p.Status.ResolvedPackage = s
+}
+
+// GetCapabilities of this ConfigurationRevision.
+func (p *ConfigurationRevision) GetCapabilities() []string {
+	return p.Status.Capabilities
+}
+
+// SetCapabilities of this ConfigurationRevision.
+func (p *ConfigurationRevision) SetCapabilities(caps []string) {
+	p.Status.Capabilities = caps
 }
 
 // PackageRevisionList is the interface satisfied by package revision list
@@ -1304,6 +1336,16 @@ func (r *FunctionRevision) GetResolvedSource() string {
 // SetResolvedSource of this FunctionRevision.
 func (r *FunctionRevision) SetResolvedSource(s string) {
 	r.Status.ResolvedPackage = s
+}
+
+// GetCapabilities of this FunctionRevision.
+func (r *FunctionRevision) GetCapabilities() []string {
+	return r.Status.Capabilities
+}
+
+// SetCapabilities of this FunctionRevision.
+func (r *FunctionRevision) SetCapabilities(caps []string) {
+	r.Status.Capabilities = caps
 }
 
 // GetRevisions of this ConfigurationRevisionList.
