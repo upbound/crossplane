@@ -14,8 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v2alpha1 contains API types that extend the Crossplane API.
-// +kubebuilder:object:generate=true
-// +groupName=apiextensions.crossplane.io
-// +versionName=v2alpha1
-package v2alpha1
+// Package xerrors defines typed errors that subsystems can use to provide more
+// context to the upper layers of the stack.
+package xerrors

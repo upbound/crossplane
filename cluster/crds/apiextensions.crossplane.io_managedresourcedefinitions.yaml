@@ -29,7 +29,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: AGE
       type: date
-    name: v2alpha1
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: A ManagedResourceDefinition defines the schema for a new custom
@@ -267,6 +267,9 @@ spec:
                 - Active
                 - Inactive
                 type: string
+                x-kubernetes-validations:
+                - message: state cannot be changed once it becomes Active
+                  rule: self == oldSelf || oldSelf != 'Active'
               versions:
                 description: |-
                   Versions is the list of all API versions of the defined custom resource.
@@ -449,7 +452,6 @@ spec:
             - group
             - names
             - scope
-            - state
             - versions
             type: object
           status:
