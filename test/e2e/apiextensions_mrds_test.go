@@ -22,7 +22,7 @@ import (
 
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
-	"github.com/crossplane/crossplane/apis/apiextensions/v2alpha1"
+	"github.com/crossplane/crossplane/apis/apiextensions/v1alpha1"
 	"github.com/crossplane/crossplane/test/e2e/config"
 	"github.com/crossplane/crossplane/test/e2e/funcs"
 )
@@ -33,12 +33,22 @@ func TestMRDValidation(t *testing.T) {
 	cases := features.Table{
 		{
 			// A valid MRD should be created.
+			Name:        "ValidNewMRDIsDefaulted",
+			Description: "A valid MRD should be created with defaults.",
+			Assessment: funcs.AllOf(
+				funcs.ApplyResources(FieldManager, manifests, "mrd-defaulted.yaml"),
+				funcs.ResourcesCreatedWithin(30*time.Second, manifests, "mrd-defaulted.yaml"),
+				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "mrd-defaulted.yaml", v1alpha1.InactiveManaged()),
+			),
+		},
+		{
+			// A valid MRD should be created.
 			Name:        "ValidNewMRDIsAccepted",
 			Description: "A valid MRD should be created.",
 			Assessment: funcs.AllOf(
 				funcs.ApplyResources(FieldManager, manifests, "mrd-valid.yaml"),
 				funcs.ResourcesCreatedWithin(30*time.Second, manifests, "mrd-valid.yaml"),
-				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "mrd-valid.yaml", v2alpha1.InactiveManaged()),
+				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "mrd-valid.yaml", v1alpha1.InactiveManaged()),
 			),
 		},
 		{
@@ -48,7 +58,7 @@ func TestMRDValidation(t *testing.T) {
 			Assessment: funcs.AllOf(
 				funcs.ApplyResources(FieldManager, manifests, "mrd-valid-updated.yaml"),
 				funcs.ResourcesCreatedWithin(30*time.Second, manifests, "mrd-valid-updated.yaml"),
-				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "mrd-valid-updated.yaml", v2alpha1.EstablishedManaged()),
+				funcs.ResourcesHaveConditionWithin(1*time.Minute, manifests, "mrd-valid-updated.yaml", v1alpha1.EstablishedManaged()),
 			),
 		},
 		{
@@ -69,11 +79,17 @@ func TestMRDValidation(t *testing.T) {
 			Description: "An invalid MRD should be rejected.",
 			Assessment:  funcs.ResourcesFailToApply(FieldManager, manifests, "mrd-invalid.yaml"),
 		},
+		{
+			// An attempt to deactivate an active MRD should be rejected.
+			Name:        "ActiveMRDCannotBeDeactivated",
+			Description: "An attempt to change an active MRD to inactive should be rejected.",
+			Assessment:  funcs.ResourcesFailToApply(FieldManager, manifests, "mrd-active-to-inactive.yaml"),
+		},
 	}
 	environment.Test(t,
 		cases.Build(t.Name()).
-			WithLabel(LabelStage, LabelStageAlpha).
-			WithLabel(LabelArea, LabelAreaAPIExtensions).
+			WithLabel(LabelArea, LabelAreaMRAP).
+			WithLabel(LabelStage, LabelStageBeta).
 			WithLabel(LabelSize, LabelSizeSmall).
 			WithLabel(config.LabelTestSuite, config.TestSuiteDefault).
 			WithTeardown("DeleteValidMRD", funcs.AllOf(

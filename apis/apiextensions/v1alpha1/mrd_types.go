@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v2alpha1
+package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,7 +33,8 @@ type ManagedResourceDefinitionSpec struct {
 	// State toggles whether the underlying CRD is created or not.
 	// +kubebuilder:validation:Enum=Active;Inactive
 	// +kubebuilder:default=Inactive
-	State ManagedResourceDefinitionState `json:"state"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf || oldSelf != 'Active'",message="state cannot be changed once it becomes Active"
+	State ManagedResourceDefinitionState `json:"state,omitempty"`
 }
 
 // ManagedResourceDefinitionState is the state of the resource definition.
