@@ -30,10 +30,10 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane/crossplane-runtime/pkg/errors"
-	"github.com/crossplane/crossplane-runtime/pkg/test"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 
-	fnv1 "github.com/crossplane/crossplane/proto/fn/v1"
+	fnv1 "github.com/crossplane/crossplane/v2/proto/fn/v1"
 )
 
 var _ FunctionRunner = &FetchingFunctionRunner{}
@@ -350,7 +350,7 @@ func TestFetchingFunctionRunner(t *testing.T) {
 				wrapped: FunctionRunnerFn(func(_ context.Context, _ string, _ *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 					rsp := &fnv1.RunFunctionResponse{
 						Requirements: &fnv1.Requirements{
-							Resources: map[string]*fnv1.ResourceSelector{
+							ExtraResources: map[string]*fnv1.ResourceSelector{
 								"gimme": {
 									ApiVersion: "test.crossplane.io/v1",
 									Kind:       "CoolResource",
@@ -377,7 +377,7 @@ func TestFetchingFunctionRunner(t *testing.T) {
 				wrapped: FunctionRunnerFn(func(_ context.Context, _ string, _ *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 					rsp := &fnv1.RunFunctionResponse{
 						Requirements: &fnv1.Requirements{
-							Resources: map[string]*fnv1.ResourceSelector{
+							ExtraResources: map[string]*fnv1.ResourceSelector{
 								"gimme": {
 									ApiVersion: "test.crossplane.io/v1",
 
@@ -408,7 +408,7 @@ func TestFetchingFunctionRunner(t *testing.T) {
 					// we're called, in response to our requirements.
 					if called {
 						want := &fnv1.RunFunctionRequest{
-							RequiredResources: map[string]*fnv1.Resources{
+							ExtraResources: map[string]*fnv1.Resources{
 								"gimme": {
 									Items: []*fnv1.Resource{{Resource: coolResource}},
 								},
@@ -425,7 +425,7 @@ func TestFetchingFunctionRunner(t *testing.T) {
 
 					rsp := &fnv1.RunFunctionResponse{
 						Requirements: &fnv1.Requirements{
-							Resources: map[string]*fnv1.ResourceSelector{
+							ExtraResources: map[string]*fnv1.ResourceSelector{
 								"gimme": {
 									ApiVersion: "test.crossplane.io/v1",
 									Kind:       "CoolResource",
@@ -448,7 +448,7 @@ func TestFetchingFunctionRunner(t *testing.T) {
 			want: want{
 				rsp: &fnv1.RunFunctionResponse{
 					Requirements: &fnv1.Requirements{
-						Resources: map[string]*fnv1.ResourceSelector{
+						ExtraResources: map[string]*fnv1.ResourceSelector{
 							"gimme": {
 								ApiVersion: "test.crossplane.io/v1",
 								Kind:       "CoolResource",
