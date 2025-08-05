@@ -24,9 +24,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane/crossplane-runtime/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 
-	fnv1 "github.com/crossplane/crossplane/proto/fn/v1"
+	fnv1 "github.com/crossplane/crossplane/v2/proto/fn/v1"
 )
 
 // MaxRequirementsIterations is the maximum number of times a Function should be
@@ -90,17 +90,17 @@ func (c *FetchingFunctionRunner) RunFunction(ctx context.Context, name string, r
 		requirements = newRequirements
 
 		// Clean up the required resources from the previous iteration to store the new ones
-		req.RequiredResources = make(map[string]*fnv1.Resources)
+		req.ExtraResources = make(map[string]*fnv1.Resources)
 
 		// Fetch the requested resources and add them to the desired state.
-		for name, selector := range newRequirements.GetResources() {
+		for name, selector := range newRequirements.GetExtraResources() {
 			resources, err := c.resources.Fetch(ctx, selector)
 			if err != nil {
 				return nil, errors.Wrapf(err, "fetching resources for %s", name)
 			}
 
 			// Resources would be nil in case of not found resources.
-			req.RequiredResources[name] = resources
+			req.ExtraResources[name] = resources
 		}
 
 		// Pass down the updated context across iterations.
