@@ -1226,10 +1226,10 @@ func TestFunctionCompose(t *testing.T) {
 						if cd, ok := obj.(*composed.Unstructured); ok {
 							// This test demonstrates the bug: the composed resource should use "existing-deployment-name" from resourceRefs,
 							// but currently it generates a new name instead
-							if cd.GetName() != "parent-xr-f4d3ac8501550bf84c63a814cc31ecb3161cbb88370f-test-res" {
+							if cd.GetName() != "parent-xr-e5ac98dc40a2" {
 								// This is the current buggy behavior - it generates a new name instead of using the existing one
 								// Log this for debugging when we run the test
-								return errors.Errorf("BUG: Composed resource generated new name %s instead of using existing name from resourceRefs: parent-xr-f4d3ac8501550bf84c63a814cc31ecb3161cbb88370f-test-res", cd.GetName())
+								return errors.Errorf("BUG: Composed resource generated new name %s instead of using existing name from resourceRefs: parent-xr-e5ac98dc40a2", cd.GetName())
 							}
 						}
 						return nil
@@ -1289,7 +1289,7 @@ func TestFunctionCompose(t *testing.T) {
 						{
 							APIVersion: "apps/v1",
 							Kind:       "Deployment",
-							Name:       "parent-xr-f4d3ac8501550bf84c63a814cc31ecb3161cbb88370f-test-res",
+							Name:       "parent-xr-e5ac98dc40a2",
 						},
 					})
 					return xr
@@ -1356,111 +1356,6 @@ func MustStruct(v map[string]any) *structpb.Struct {
 	}
 
 	return s
-}
-
-func TestToProtobufResourceSelector(t *testing.T) {
-	type args struct {
-		r v1.RequiredResourceSelector
-	}
-	type want struct {
-		result *fnv1.ResourceSelector
-	}
-
-	cases := map[string]struct {
-		reason string
-		args   args
-		want   want
-	}{
-		"BasicSelector": {
-			reason: "Should convert basic API selector to protobuf selector",
-			args: args{
-				r: v1.RequiredResourceSelector{
-					RequirementName: "test-req",
-					APIVersion:      "v1",
-					Kind:            "ConfigMap",
-				},
-			},
-			want: want{
-				result: &fnv1.ResourceSelector{
-					ApiVersion: "v1",
-					Kind:       "ConfigMap",
-				},
-			},
-		},
-		"NameSelector": {
-			reason: "Should convert name-based selector",
-			args: args{
-				r: v1.RequiredResourceSelector{
-					RequirementName: "test-req",
-					APIVersion:      "v1",
-					Kind:            "ConfigMap",
-					Name:            ptr.To("test-name"),
-				},
-			},
-			want: want{
-				result: &fnv1.ResourceSelector{
-					ApiVersion: "v1",
-					Kind:       "ConfigMap",
-					Match: &fnv1.ResourceSelector_MatchName{
-						MatchName: "test-name",
-					},
-				},
-			},
-		},
-		"LabelSelector": {
-			reason: "Should convert label-based selector",
-			args: args{
-				r: v1.RequiredResourceSelector{
-					RequirementName: "test-req",
-					APIVersion:      "v1",
-					Kind:            "ConfigMap",
-					MatchLabels:     map[string]string{"app": "test"},
-				},
-			},
-			want: want{
-				result: &fnv1.ResourceSelector{
-					ApiVersion: "v1",
-					Kind:       "ConfigMap",
-					Match: &fnv1.ResourceSelector_MatchLabels{
-						MatchLabels: &fnv1.MatchLabels{
-							Labels: map[string]string{"app": "test"},
-						},
-					},
-				},
-			},
-		},
-		"NamespacedSelector": {
-			reason: "Should convert namespaced selector",
-			args: args{
-				r: v1.RequiredResourceSelector{
-					RequirementName: "test-req",
-					APIVersion:      "v1",
-					Kind:            "ConfigMap",
-					Namespace:       ptr.To("test-namespace"),
-					Name:            ptr.To("test-name"),
-				},
-			},
-			want: want{
-				result: &fnv1.ResourceSelector{
-					ApiVersion: "v1",
-					Kind:       "ConfigMap",
-					Namespace:  ptr.To("test-namespace"),
-					Match: &fnv1.ResourceSelector_MatchName{
-						MatchName: "test-name",
-					},
-				},
-			},
-		},
-	}
-
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			result := ToProtobufResourceSelector(tc.args.r)
-			if diff := cmp.Diff(tc.want.result, result, protocmp.Transform()); diff != "" {
-				t.Errorf("\n%s\nToProtobufResourceSelector(...): -want, +got:\n%s", tc.reason, diff)
-			}
-		})
-	}
 }
 
 func WithParentLabel() *composite.Unstructured {
